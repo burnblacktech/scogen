@@ -1,0 +1,50 @@
+{
+  "name": "scogen",
+  "version": "1.0.0",
+  "description": "AI-powered development scoping tool",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/cli.js",
+    "web": "node src/web-server.js",
+    "cli": "node src/cli.js",
+    "setup-db": "node scripts/setup-database.js",
+    "setup-db:seed": "node scripts/setup-database.js --seed",
+    "db:migrate": "node src/database/migrator.js up",
+    "db:migrate:status": "node src/database/migrator.js status",
+    "db:migrate:rollback": "node src/database/migrator.js down",
+    "db:seed": "node src/database/seeds/seed.js",
+    "test": "jest",
+    "quick-test": "node scripts/quick-test.js",
+    "validate": "node scripts/validate-day1.js"
+  },
+  "keywords": [
+    "scoping",
+    "estimation",
+    "consulting",
+    "ai"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "dependencies": {
+    "better-sqlite3": "^9.2.2",
+    "chalk": "^4.1.2",
+    "commander": "^11.1.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.21.2",
+    "js-yaml": "^4.1.0",
+    "multer": "^2.0.2",
+    "openai": "^4.24.0",
+    "pdf-parse": "^2.4.5",
+    "uuid": "^9.0.1",
+    "winston": "^3.11.0",
+    "xlsx": "^0.20.2"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0"
+  },
+  "engines": {
+    "node": ">=16.0.0",
+    "npm": ">=8.0.0"
+  }
+}
