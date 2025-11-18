@@ -4,12 +4,19 @@ let uploadedExcelText = null;
 let currentInputType = 'text';
 let currentResult = null;
 
+// Track page load time for metrics
+window.pageLoadTime = Date.now();
+
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', () => {
     initializeInputSwitcher();
     initializeFileUploads();
     initializeOptions();
     initializeGenerateButton();
+    initializeTabNavigation();
+    checkAuthStatus(); // Check if user is logged in
+    initializeTestingDashboard();
+    initializeCheckpointMode();
 });
 
 // Input type switcher
@@ -184,8 +191,105 @@ async function handleExcelUpload() {
             uploadedExcelText = null;
         }
     } catch (error) {
-        preview.innerHTML = `❌ Upload failed: ${error.message}`;
+        console.error('Excel upload error:', error);
+        preview.innerHTML = `❌ Upload failed: ${error.message || 'Unknown error'}`;
         uploadedExcelText = null;
+    }
+}
+
+// Login/Logout Functions
+function showLoginModal() {
+    document.getElementById('login-modal').style.display = 'flex';
+}
+
+function hideLoginModal() {
+    document.getElementById('login-modal').style.display = 'none';
+    document.getElementById('login-error').style.display = 'none';
+    document.getElementById('login-error').textContent = '';
+}
+
+async function handleLogin(event) {
+    event.preventDefault();
+    const email = document.getElementById('login-email').value;
+    const password = document.getElementById('login-password').value;
+    const errorDiv = document.getElementById('login-error');
+    
+    try {
+        const response = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ email, password })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            // Store session token
+            localStorage.setItem('sessionToken', result.sessionId);
+            localStorage.setItem('user', JSON.stringify(result.user));
+            
+            // Update UI
+            document.getElementById('user-info').textContent = `Logged in as ${result.user.name || result.user.email}`;
+            document.getElementById('user-info').style.display = 'block';
+            document.getElementById('login-btn').style.display = 'none';
+            document.getElementById('logout-btn').style.display = 'block';
+            
+            hideLoginModal();
+        } else {
+            errorDiv.textContent = result.error || 'Login failed';
+            errorDiv.style.display = 'block';
+        }
+    } catch (error) {
+        console.error('Login error:', error);
+        errorDiv.textContent = 'Login failed. Please try again.';
+        errorDiv.style.display = 'block';
+    }
+}
+
+async function handleLogout() {
+    try {
+        const sessionToken = localStorage.getItem('sessionToken');
+        if (sessionToken) {
+            await fetch('/api/auth/logout', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Session-Token': sessionToken
+                }
+            });
+        }
+    } catch (error) {
+        console.error('Logout error:', error);
+    }
+    
+    // Clear local storage
+    localStorage.removeItem('sessionToken');
+    localStorage.removeItem('user');
+    
+    // Update UI
+    document.getElementById('user-info').style.display = 'none';
+    document.getElementById('login-btn').style.display = 'block';
+    document.getElementById('logout-btn').style.display = 'none';
+}
+
+// Check if user is already logged in on page load
+function checkAuthStatus() {
+    const sessionToken = localStorage.getItem('sessionToken');
+    const userStr = localStorage.getItem('user');
+    
+    if (sessionToken && userStr) {
+        try {
+            const user = JSON.parse(userStr);
+            document.getElementById('user-info').textContent = `Logged in as ${user.name || user.email}`;
+            document.getElementById('user-info').style.display = 'block';
+            document.getElementById('login-btn').style.display = 'none';
+            document.getElementById('logout-btn').style.display = 'block';
+        } catch (error) {
+            console.error('Error parsing user data:', error);
+            handleLogout();
+        }
     }
 }
 
@@ -267,11 +371,17 @@ async function generateScope() {
     
     try {
         // Collect critical project details
+        // Helper function to get value only if non-empty
+        const getValueIfNotEmpty = (elementId) => {
+            const value = document.getElementById(elementId).value.trim();
+            return value || undefined; // Return undefined instead of empty string
+        };
+        
         const projectDetails = {
-            projectScale: document.getElementById('projectScale').value, // Changed from 'scale' to 'projectScale'
-            marketRegion: document.getElementById('marketRegion').value,
-            maxBudget: document.getElementById('maxBudget').value.trim(), // Optional constraint
-            targetDeadline: document.getElementById('targetDeadline').value.trim(), // Optional constraint
+            projectScale: getValueIfNotEmpty('projectScale'), // Changed from 'scale' to 'projectScale'
+            marketRegion: getValueIfNotEmpty('marketRegion'),
+            maxBudget: getValueIfNotEmpty('maxBudget'), // Optional constraint
+            targetDeadline: getValueIfNotEmpty('targetDeadline'), // Optional constraint
             requirements: {
                 mobileApp: document.getElementById('reqMobileApp').checked,
                 thirdPartyIntegrations: document.getElementById('reqThirdPartyIntegrations').checked,
@@ -280,8 +390,15 @@ async function generateScope() {
                 realTime: document.getElementById('reqRealTime').checked,
                 paymentGateway: document.getElementById('reqPaymentGateway').checked
             },
-            additionalConstraints: document.getElementById('additionalConstraints').value.trim()
+            additionalConstraints: getValueIfNotEmpty('additionalConstraints')
         };
+        
+        // Remove undefined values to keep the object clean
+        Object.keys(projectDetails).forEach(key => {
+            if (projectDetails[key] === undefined) {
+                delete projectDetails[key];
+            }
+        });
         
         // Build context string from project details
         let contextString = '';
@@ -443,6 +560,17 @@ function displayResults(result) {
     
     displayScopeSummary(result);
     
+    // Display dual estimate if available (NEW - Dual-Layer Estimation)
+    // Use new OutputDisplay class if available, otherwise fallback to old method
+    if (result.dualEstimate) {
+        if (window.OutputDisplay) {
+            const outputDisplay = new window.OutputDisplay();
+            outputDisplay.displayDualEstimate(result);
+        } else {
+            displayDualEstimate(result);
+        }
+    }
+    
     // Display technical decomposition if available (from Step 3)
     if (result.technicalDecomposition) {
         displayTechnicalDecomposition(result.technicalDecomposition, result.presentations, result.resourceBasedEstimate);
@@ -483,8 +611,8 @@ function displayResults(result) {
         displayTrustMetadata(result.metadata);
     }
     
-    // Display warnings if available
-    if (result.warnings && result.warnings.length > 0) {
+    // Display warnings if available (defensive check for array)
+    if (result.warnings && Array.isArray(result.warnings) && result.warnings.length > 0) {
         displayWarnings(result.warnings);
     }
 }
@@ -932,29 +1060,29 @@ function displayClientProfile(clientProfile) {
         </div>
     `;
     
-    if (clientProfile.recommendations && clientProfile.recommendations.length > 0) {
+    if (clientProfile.recommendations && Array.isArray(clientProfile.recommendations) && clientProfile.recommendations.length > 0) {
         html += `
             <h3>💡 Recommendations</h3>
             <ul style="margin: 0; padding-left: 20px;">
-                ${clientProfile.recommendations.map(rec => `<li>${escapeHtml(rec)}</li>`).join('')}
+                ${clientProfile.recommendations.map(rec => `<li>${escapeHtml(typeof rec === 'string' ? rec : (rec?.message || String(rec)))}</li>`).join('')}
             </ul>
         `;
     }
     
-    if (clientProfile.warnings && clientProfile.warnings.length > 0) {
+    if (clientProfile.warnings && Array.isArray(clientProfile.warnings) && clientProfile.warnings.length > 0) {
         html += `
             <h3 style="color: #ff9800; margin-top: 20px;">⚠️ Warnings</h3>
             <ul style="margin: 0; padding-left: 20px; color: #ff9800;">
-                ${clientProfile.warnings.map(warn => `<li>${escapeHtml(warn)}</li>`).join('')}
+                ${clientProfile.warnings.map(warn => `<li>${escapeHtml(typeof warn === 'string' ? warn : (warn?.message || String(warn)))}</li>`).join('')}
             </ul>
         `;
     }
     
-    if (clientProfile.dealStructure && clientProfile.dealStructure.length > 0) {
+    if (clientProfile.dealStructure && Array.isArray(clientProfile.dealStructure) && clientProfile.dealStructure.length > 0) {
         html += `
             <h3 style="margin-top: 20px;">📋 Deal Structure Suggestions</h3>
             <ul style="margin: 0; padding-left: 20px;">
-                ${clientProfile.dealStructure.map(item => `<li>${escapeHtml(item)}</li>`).join('')}
+                ${clientProfile.dealStructure.map(item => `<li>${escapeHtml(typeof item === 'string' ? item : (item?.message || String(item)))}</li>`).join('')}
             </ul>
         `;
     }
@@ -1235,13 +1363,14 @@ function handleRoutingResponse(result) {
             html += '<p>' + (result.message || 'Please follow the instructions above') + '</p>';
     }
     
-    // Display warnings
-    if (result.warnings && result.warnings.length > 0) {
+    // Display warnings (defensive check for array)
+    if (result.warnings && Array.isArray(result.warnings) && result.warnings.length > 0) {
         html += '<div style="margin-top: 20px; padding: 15px; background: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px;">';
         html += '<h3 style="margin-top: 0;">⚠️ Warnings</h3>';
         html += '<ul>';
         result.warnings.forEach(warning => {
-            html += `<li>${warning.message || warning}</li>`;
+            const message = typeof warning === 'string' ? warning : (warning?.message || 'Unknown warning');
+            html += `<li>${message}</li>`;
         });
         html += '</ul>';
         html += '</div>';
@@ -1278,12 +1407,18 @@ function displayTrustMetadata(metadata) {
 }
 
 function displayWarnings(warnings) {
+    // Defensive check: ensure warnings is an array
+    if (!warnings || !Array.isArray(warnings)) {
+        console.warn('displayWarnings called with non-array:', warnings);
+        return;
+    }
+    
     const container = document.getElementById('resultsSection');
     let html = '<div class="result-card" style="margin-bottom: 20px; padding: 15px; background: #fff3cd; border-left: 4px solid #ffc107;">';
     html += '<h3 style="margin-top: 0;">⚠️ Warnings</h3>';
     html += '<ul>';
     warnings.forEach(warning => {
-        const message = typeof warning === 'string' ? warning : warning.message || 'Unknown warning';
+        const message = typeof warning === 'string' ? warning : (warning?.message || 'Unknown warning');
         html += `<li>${message}</li>`;
     });
     html += '</ul>';
@@ -1292,6 +1427,447 @@ function displayWarnings(warnings) {
     // Insert at the beginning
     const existing = container.innerHTML;
     container.innerHTML = html + existing;
+}
+
+/**
+ * Display Dual Estimate with Graduated Transparency Model
+ * Stage 1: Commercial only (default)
+ * Stage 2: Add gap indicator + reveal button (after delay/behavior)
+ * Stage 3: Split view (on request)
+ */
+function displayDualEstimate(result) {
+    if (!result.dualEstimate) return;
+    
+    const { technical, commercial } = result.dualEstimate;
+    const gapIndicator = result.gapIndicator || { emoji: '🔵', text: 'Standard pricing', color: 'blue' };
+    const budgetOptimization = result.budgetOptimization;
+    
+    const container = document.getElementById('resultsSection');
+    if (!container) return;
+    
+    // Create estimation wrapper if it doesn't exist
+    let estimationWrapper = document.getElementById('estimation-container');
+    if (!estimationWrapper) {
+        estimationWrapper = document.createElement('div');
+        estimationWrapper.id = 'estimation-container';
+        estimationWrapper.className = 'estimation-wrapper';
+        container.insertBefore(estimationWrapper, container.firstChild);
+    }
+    
+    // Create estimation content grid if it doesn't exist
+    let estimationContent = estimationWrapper.querySelector('.estimation-content');
+    if (!estimationContent) {
+        estimationContent = document.createElement('div');
+        estimationContent.className = 'estimation-content';
+        estimationWrapper.appendChild(estimationContent);
+    }
+    
+    // Stage 1: Commercial view (default) - Using new design system
+    let primaryPanelHtml = `
+        <div class="primary-panel" id="dual-estimate-view">
+            <div class="proposal-card commercial-view">
+                <div class="card-header">
+                    <div class="header-badge">Commercial Proposal</div>
+                    <div class="trust-indicator">
+                        <span class="trust-icon">🛡️</span>
+                        <span class="trust-text">Based on 247+ similar projects</span>
+                    </div>
+                </div>
+                
+                <div class="price-display-container">
+                    <div class="price-label">Proposed Investment</div>
+                    <div class="price-amount price-display" data-amount="${commercial.cost}">
+                        <span class="currency">₹</span>
+                        <span class="amount-value">${formatCurrency(commercial.cost)}</span>
+                    </div>
+                    <div class="price-context">
+                        <span class="context-badge ${gapIndicator.color || 'standard'}">${gapIndicator.text}</span>
+                        <button class="reveal-truth-btn" onclick="showEstimate('technical')">
+                            <span class="icon">👁️</span>
+                            <span class="text">View Technical Analysis</span>
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="timeline-display">
+                    <div class="timeline-item">
+                        <span class="timeline-icon">📅</span>
+                        <span class="timeline-label">Timeline</span>
+                        <span class="timeline-value">${commercial.timeline} days</span>
+                    </div>
+                    <div class="timeline-item">
+                        <span class="timeline-icon">👥</span>
+                        <span class="timeline-label">Team Size</span>
+                        <span class="timeline-value">${commercial.teamSize || technical.teamSize || 6} developers</span>
+                    </div>
+                    <div class="timeline-item">
+                        <span class="timeline-icon">📊</span>
+                        <span class="timeline-label">Modules</span>
+                        <span class="timeline-value">${technical.modules} features</span>
+                    </div>
+                </div>
+                
+                ${commercial.narrative ? `
+                    <div class="proposal-narrative" style="padding: var(--space-4); background: #f9fafb; border-radius: 12px; margin: var(--space-6) 0;">
+                        <p class="tone-${commercial.narrative.tone}" style="font-weight: 600; margin-bottom: var(--space-2); color: var(--primary-900);">
+                            ${commercial.narrative.message}
+                        </p>
+                        <small style="color: #6b7280; font-size: var(--text-sm);">${commercial.narrative.justification}</small>
+                    </div>
+                ` : ''}
+                
+                ${commercial.moduleDistribution ? `
+                    <div class="distribution-note" style="margin-top: var(--space-6); padding: var(--space-4); background: #f0f7ff; border-radius: 12px;">
+                        <h4 style="margin-bottom: var(--space-3); font-size: var(--text-base); font-weight: 600;">Budget Distribution</h4>
+                        <div class="distribution-chart" style="display: grid; gap: var(--space-2);">
+                            ${Object.entries(commercial.moduleDistribution).slice(0, 10).map(([name, dist]) => `
+                                <div style="padding: var(--space-3); background: white; border-radius: 8px; border-left: 3px solid var(--primary-500);">
+                                    <div style="display: flex; justify-content: space-between; margin-bottom: var(--space-1);">
+                                        <span style="font-weight: 600; font-size: var(--text-sm);">${escapeHtml(name)}</span>
+                                        <span style="font-weight: 600; color: var(--primary-700);">₹${formatCurrency(dist.allocatedBudget)}</span>
+                                    </div>
+                                    <div style="font-size: var(--text-xs); color: #6b7280;">
+                                        ${dist.percentageOfBudget}% of budget
+                                        ${dist.originalCost ? ` • Original: ₹${formatCurrency(dist.originalCost)}` : ''}
+                                    </div>
+                                </div>
+                            `).join('')}
+                            ${Object.keys(commercial.moduleDistribution).length > 10 ? `
+                                <div style="text-align: center; padding: var(--space-2); color: #6b7280; font-size: var(--text-xs);">
+                                    +${Object.keys(commercial.moduleDistribution).length - 10} more modules
+                                </div>
+                            ` : ''}
+                        </div>
+                    </div>
+                ` : ''}
+                
+                <!-- Stage 2: Gap indicator + reveal button (shown after delay) -->
+                <div id="truth-hint" style="margin-top: var(--space-6); padding: var(--space-4); background: #f0f7ff; border-radius: 12px; display: none;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: var(--space-2);">
+                        <div style="display: flex; align-items: center; gap: var(--space-2);">
+                            <span class="indicator" style="font-size: var(--text-xl);">${gapIndicator.emoji}</span>
+                            <span style="font-weight: 600; color: var(--primary-900);">${gapIndicator.text}</span>
+                            ${gapIndicator.gapPercent ? `<span style="color: #6b7280; font-size: var(--text-sm);">(${gapIndicator.gapPercent})</span>` : ''}
+                        </div>
+                        <button class="reveal-truth-btn" onclick="showEstimate('technical')">
+                            <span class="icon">👁️</span>
+                            <span class="text">See technical breakdown</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Technical View (Hidden by default) -->
+            <div class="truth-panel" id="technical-estimate" style="display:none;">
+                <div class="truth-header">
+                    <h3>Technical Analysis</h3>
+                    <button class="close-truth-btn" onclick="showEstimate('commercial')">×</button>
+                </div>
+                
+                <div class="truth-content">
+                    <div class="truth-metric">
+                        <span class="metric-label">Actual Development Cost</span>
+                        <span class="metric-value">₹${formatCurrency(technical.cost)}</span>
+                    </div>
+                    <div class="truth-metric">
+                        <span class="metric-label">Required Timeline</span>
+                        <span class="metric-value">${technical.timeline} days</span>
+                    </div>
+                    <div class="truth-metric">
+                        <span class="metric-label">Optimal Team Size</span>
+                        <span class="metric-value">${technical.teamSize} developers</span>
+                    </div>
+                    <div class="truth-metric">
+                        <span class="metric-label">Total Modules</span>
+                        <span class="metric-value">${technical.modules}</span>
+                    </div>
+                    <div class="truth-metric">
+                        <span class="metric-label">Complexity</span>
+                        <span class="metric-value">${technical.complexity || 'medium'}</span>
+                    </div>
+                    
+                    <div class="variance-display">
+                        <div class="variance-bar">
+                            <div class="actual-cost-marker" style="left: ${(technical.cost / commercial.cost * 100).toFixed(0)}%"></div>
+                            <div class="proposed-cost-marker" style="left: 100%"></div>
+                        </div>
+                        <div class="variance-label">
+                            ${commercial.cost >= technical.cost ? 
+                                `Commercial price includes ${((commercial.cost - technical.cost) / technical.cost * 100).toFixed(0)}% margin + risk buffer` :
+                                `Proposed price is ${((technical.cost - commercial.cost) / technical.cost * 100).toFixed(0)}% below technical cost`
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    // Add budget optimization section if available
+    let budgetOptimizationHtml = '';
+    if (budgetOptimization && budgetOptimization.primary) {
+        budgetOptimizationHtml = `
+            <div class="primary-panel" style="margin-top: var(--space-6);">
+                <div class="proposal-card">
+                    <div class="card-header">
+                        <div class="header-badge" style="background: var(--optimize-gradient);">💰 Budget Optimization</div>
+                    </div>
+                    <p style="color: #6b7280; margin-bottom: var(--space-6); font-size: var(--text-sm);">
+                        Make your budget work without cutting features
+                    </p>
+                    
+                    <div class="recommended-solution" style="padding: var(--space-6); background: white; border: 2px solid var(--primary-500); border-radius: 12px; margin-bottom: var(--space-4); position: relative;">
+                        <div class="recommendation-badge" style="position: absolute; top: -12px; left: var(--space-4);">
+                            🎯 ${budgetOptimization.primary.confidence || '91% Success Rate'}
+                        </div>
+                        <h4 style="margin-top: var(--space-2); margin-bottom: var(--space-3); font-size: var(--text-lg); font-weight: 600; color: var(--primary-900);">
+                            ${budgetOptimization.primary.name}
+                        </h4>
+                        <p style="color: #6b7280; margin-bottom: var(--space-4); font-size: var(--text-sm);">
+                            ${budgetOptimization.primary.message}
+                        </p>
+                        <ul class="benefits" style="list-style: none; padding: 0; margin: 0;">
+                            ${budgetOptimization.primary.options ? budgetOptimization.primary.options.map(opt => `
+                                <li style="padding: var(--space-2) 0; display: flex; align-items: start; gap: var(--space-2);">
+                                    <span style="color: var(--success-green); font-size: var(--text-lg);">✅</span>
+                                    <span style="color: #4b5563; font-size: var(--text-sm);">${escapeHtml(opt)}</span>
+                                </li>
+                            `).join('') : ''}
+                        </ul>
+                        ${budgetOptimization.primary.adjustments ? `
+                            <div style="margin-top: var(--space-4); padding: var(--space-3); background: #f9fafb; border-radius: 8px;">
+                                <div style="font-size: var(--text-xs); color: #6b7280; margin-bottom: var(--space-2);">Suggested Adjustments:</div>
+                                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--space-2);">
+                                    ${budgetOptimization.primary.adjustments.teamSize ? `
+                                        <div style="font-size: var(--text-sm);">
+                                            <span style="color: #6b7280;">Team:</span>
+                                            <span style="font-weight: 600; color: var(--primary-900);"> ${budgetOptimization.primary.adjustments.teamSize} developers</span>
+                                        </div>
+                                    ` : ''}
+                                    ${budgetOptimization.primary.adjustments.timeline ? `
+                                        <div style="font-size: var(--text-sm);">
+                                            <span style="color: #6b7280;">Timeline:</span>
+                                            <span style="font-weight: 600; color: var(--primary-900);"> ${budgetOptimization.primary.adjustments.timeline} days</span>
+                                        </div>
+                                    ` : ''}
+                                </div>
+                            </div>
+                        ` : ''}
+                    </div>
+                    
+                    ${budgetOptimization.alternatives && budgetOptimization.alternatives.length > 0 ? `
+                        <details class="other-options" style="margin-top: var(--space-4);">
+                            <summary style="cursor: pointer; font-weight: 600; padding: var(--space-3); background: white; border: 1px solid #e5e7eb; border-radius: 8px; font-size: var(--text-sm); color: var(--primary-700);">
+                                See ${budgetOptimization.alternatives.length} other ways to fit your budget
+                            </summary>
+                            <div style="margin-top: var(--space-3); padding: var(--space-4); background: #f9fafb; border-radius: 8px;">
+                                <!-- Alternatives content can be added here -->
+                            </div>
+                        </details>
+                    ` : ''}
+                </div>
+            </div>
+        `;
+    }
+    
+    // Combine primary panel with budget optimization
+    primaryPanelHtml += budgetOptimizationHtml;
+    
+    // Add adjustment panel structure
+    const adjustmentPanelHtml = `
+        <div class="adjustment-panel collapsed">
+            <button class="panel-toggle">
+                <span class="toggle-icon">⚙️</span>
+                <span class="toggle-text">Customize Proposal</span>
+            </button>
+            
+            <div class="panel-content">
+                <h3 style="margin-bottom: var(--space-4); font-size: var(--text-lg); font-weight: 600; color: var(--primary-900);">Proposal Adjustments</h3>
+                
+                <!-- Budget Override -->
+                <div class="control-group">
+                    <label class="control-label">
+                        Client Budget
+                        <span class="tooltip" data-tip="Override calculated price">?</span>
+                    </label>
+                    <div class="input-wrapper">
+                        <span class="currency-prefix">₹</span>
+                        <input type="number" id="budget-override" placeholder="Leave empty for auto">
+                    </div>
+                </div>
+                
+                <!-- Margin Slider -->
+                <div class="control-group">
+                    <label class="control-label">
+                        Profit Margin
+                        <span class="value-display" id="margin-value">15%</span>
+                    </label>
+                    <div class="slider-container">
+                        <input type="range" id="margin-slider" min="-10" max="40" value="15">
+                        <div class="slider-labels">
+                            <span>Strategic</span>
+                            <span>Standard</span>
+                            <span>Premium</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Risk Buffer -->
+                <div class="control-group">
+                    <label class="control-label">
+                        Risk Buffer
+                        <span class="value-display" id="risk-value">20%</span>
+                    </label>
+                    <div class="slider-container">
+                        <input type="range" id="risk-slider" min="0" max="40" value="20">
+                        <div class="slider-labels">
+                            <span>Minimal</span>
+                            <span>Standard</span>
+                            <span>Conservative</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Team Size Adjustment -->
+                <div class="control-group">
+                    <label class="control-label">
+                        Team Size Factor
+                        <span class="value-display" id="team-value">1.0x</span>
+                    </label>
+                    <div class="slider-container">
+                        <input type="range" id="team-slider" min="0.5" max="2" step="0.1" value="1">
+                        <div class="team-impact">
+                            <span class="impact-item">Team: <span id="team-size">${commercial.teamSize || technical.teamSize || 6}</span></span>
+                            <span class="impact-item">Timeline: <span id="adjusted-timeline">${commercial.timeline}</span> days</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Payment Terms -->
+                <div class="control-group">
+                    <label class="control-label">Payment Structure</label>
+                    <div class="radio-group">
+                        <label class="radio-option">
+                            <input type="radio" name="payment" value="milestone" checked>
+                            <span class="radio-label">Milestone Based</span>
+                        </label>
+                        <label class="radio-option">
+                            <input type="radio" name="payment" value="monthly">
+                            <span class="radio-label">Monthly</span>
+                        </label>
+                        <label class="radio-option">
+                            <input type="radio" name="payment" value="5050">
+                            <span class="radio-label">50-50 Split</span>
+                        </label>
+                    </div>
+                </div>
+                
+                <!-- Apply Button -->
+                <div class="panel-actions">
+                    <button class="btn-apply-adjustments">
+                        Apply Changes
+                        <span class="icon">→</span>
+                    </button>
+                    <button class="btn-reset">Reset to Defaults</button>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    // Clear existing content in estimation-content and add new structure
+    estimationContent.innerHTML = primaryPanelHtml + adjustmentPanelHtml;
+    
+    // Setup behavior tracking for progressive disclosure
+    setupBehaviorTracking(result);
+    
+    // Initialize EstimationUI if available
+    if (window.estimationUI) {
+        window.estimationUI.setCosts(technical.cost, commercial.cost);
+    }
+    
+    // Show hint after 5 seconds
+    setTimeout(() => {
+        const hint = document.getElementById('truth-hint');
+        if (hint) {
+            hint.style.display = 'block';
+            // Add gentle pulse animation
+            hint.style.animation = 'gentlePulse 3s infinite';
+        }
+    }, 5000);
+}
+
+/**
+ * Switch between commercial and technical views
+ */
+function showEstimate(view) {
+    const commercialView = document.querySelector('.proposal-card.commercial-view');
+    const technicalView = document.getElementById('technical-estimate');
+    
+    if (view === 'technical') {
+        if (commercialView) commercialView.style.display = 'none';
+        if (technicalView) technicalView.style.display = 'block';
+        
+        // Track event
+        if (window.estimationUI) {
+            window.estimationUI.trackEvent('technical_view_opened');
+        }
+    } else {
+        if (commercialView) commercialView.style.display = 'block';
+        if (technicalView) technicalView.style.display = 'none';
+    }
+}
+
+/**
+ * Setup behavior tracking for progressive disclosure
+ */
+function setupBehaviorTracking(result) {
+    let hoverCount = 0;
+    let scrollCount = 0;
+    
+    // Track hovers on price
+    const priceElement = document.querySelector('.big-number');
+    if (priceElement) {
+        priceElement.addEventListener('mouseenter', () => {
+            hoverCount++;
+            if (hoverCount >= 3) {
+                const hint = document.getElementById('truth-hint');
+                if (hint && hint.style.display === 'none') {
+                    hint.style.display = 'block';
+                }
+            }
+        });
+    }
+    
+    // Track scrolls
+    let lastScrollTop = 0;
+    window.addEventListener('scroll', () => {
+        const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+        if (scrollTop > lastScrollTop) {
+            scrollCount++;
+            if (scrollCount >= 2) {
+                const hint = document.getElementById('truth-hint');
+                if (hint && hint.style.display === 'none') {
+                    hint.style.display = 'block';
+                }
+            }
+        }
+        lastScrollTop = scrollTop;
+    });
+}
+
+/**
+ * Format currency helper
+ */
+function formatCurrency(amount) {
+    if (!amount) return '0';
+    if (amount >= 10000000) {
+        return (amount / 10000000).toFixed(2) + 'Cr';
+    } else if (amount >= 100000) {
+        return (amount / 100000).toFixed(2) + 'L';
+    } else if (amount >= 1000) {
+        return (amount / 1000).toFixed(1) + 'K';
+    }
+    return amount.toLocaleString('en-IN');
 }
 
 function displayTechnicalSpecs(specs) {
@@ -1533,4 +2109,760 @@ function formatProposalMarkdown(proposal) {
     md += `| Buffer | ${proposal.summary.bufferCost.toLocaleString('en-IN')} |\n`;
     md += `| **Total** | **${proposal.summary.totalCost.toLocaleString('en-IN')}** |\n`;
     return md;
+}
+
+// Tab Navigation
+function initializeTabNavigation() {
+    const tabButtons = document.querySelectorAll('.tab-btn');
+    const tabContents = document.querySelectorAll('.tab-content');
+    
+    tabButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const targetTab = btn.dataset.tab;
+            
+            // Update button states
+            tabButtons.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            
+            // Update content visibility
+            tabContents.forEach(content => {
+                const contentId = content.id;
+                const expectedId = `${targetTab}-tab`;
+                
+                content.classList.remove('active');
+                if (contentId === expectedId) {
+                    content.classList.add('active');
+                    content.style.display = 'block'; // Force display
+                } else {
+                    content.style.display = 'none'; // Hide others
+                }
+            });
+            
+            // Load testing dashboard if switching to testing tab
+            if (targetTab === 'testing') {
+                loadTestingDashboard();
+            }
+        });
+    });
+    
+    // Also load testing dashboard on initial page load if testing tab is active
+    const activeTab = document.querySelector('.tab-btn.active');
+    if (activeTab && activeTab.dataset.tab === 'testing') {
+        loadTestingDashboard();
+    }
+}
+
+// Testing Dashboard Functions
+async function loadTestingDashboard() {
+    try {
+        const response = await fetch('/api/testing/stats');
+        
+        if (!response.ok) {
+            throw new Error(`Failed to load stats: ${response.status}`);
+        }
+        
+        const stats = await response.json();
+        
+        // Update stats - handle both direct stats and wrapped response
+        const statsData = stats.success !== undefined ? stats : { success: true, ...stats };
+        const total = statsData.total || 0;
+        const accuracy = statsData.accuracy || 0;
+        const avgQuality = statsData.avgQuality || 0;
+        const avgProcessingTime = statsData.avgProcessingTime || 0;
+        
+        const totalEl = document.getElementById('test-total');
+        const accuracyEl = document.getElementById('test-accuracy');
+        const qualityEl = document.getElementById('test-quality');
+        const timeEl = document.getElementById('test-time');
+        
+        if (totalEl) totalEl.textContent = `${total}/50`;
+        if (accuracyEl) accuracyEl.textContent = `${Math.round(accuracy)}%`;
+        if (qualityEl) qualityEl.textContent = `${avgQuality.toFixed(1)}/10`;
+        if (timeEl) timeEl.textContent = `${Math.round(avgProcessingTime / 60000)}m`;
+        
+        // Load projects
+        await loadTestProjects();
+    } catch (error) {
+        console.error('Failed to load testing dashboard:', error);
+        const totalEl = document.getElementById('test-total');
+        const accuracyEl = document.getElementById('test-accuracy');
+        const qualityEl = document.getElementById('test-quality');
+        const timeEl = document.getElementById('test-time');
+        
+        if (totalEl) totalEl.textContent = '0/50';
+        if (accuracyEl) accuracyEl.textContent = '0%';
+        if (qualityEl) qualityEl.textContent = '0/10';
+        if (timeEl) timeEl.textContent = '0m';
+        
+        // Show error message in projects table
+        const tbody = document.getElementById('test-projects-tbody');
+        if (tbody) {
+            tbody.innerHTML = `<tr><td colspan="7" style="padding: 20px; text-align: center; color: #f44336;">Error loading dashboard: ${error.message}</td></tr>`;
+        }
+    }
+}
+
+async function loadTestProjects() {
+    try {
+        const response = await fetch('/api/testing/projects');
+        
+        if (!response.ok) {
+            throw new Error(`Failed to load projects: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        
+        // Extract projects array from response
+        const projects = data.success && data.projects ? data.projects : (Array.isArray(data) ? data : []);
+        
+        const tbody = document.getElementById('test-projects-tbody');
+        
+        if (!tbody) {
+            console.error('test-projects-tbody element not found!');
+            return;
+        }
+        
+        if (!projects || projects.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" style="padding: 20px; text-align: center; color: #999;">No test projects yet</td></tr>';
+            return;
+        }
+        
+        tbody.innerHTML = projects.map(p => {
+            const variance = p.variance !== null && p.variance !== undefined ? p.variance.toFixed(1) : '-';
+            const varianceClass = getVarianceClass(p.variance);
+            const estimated = p.quoted_cost ? formatCurrency(p.quoted_cost) : '-';
+            const actual = p.actual_cost ? formatCurrency(p.actual_cost) : 'Pending';
+            const quality = p.output_quality_score !== null ? `${p.output_quality_score}/10` : '-';
+            
+            return `
+                <tr>
+                    <td style="padding: 12px; border-bottom: 1px solid #ddd;">#${p.test_number || '-'}</td>
+                    <td style="padding: 12px; border-bottom: 1px solid #ddd;">${p.test_category || '-'}</td>
+                    <td style="padding: 12px; border-bottom: 1px solid #ddd;">${estimated}</td>
+                    <td style="padding: 12px; border-bottom: 1px solid #ddd;">${actual}</td>
+                    <td style="padding: 12px; border-bottom: 1px solid #ddd;" class="${varianceClass}">${variance}%</td>
+                    <td style="padding: 12px; border-bottom: 1px solid #ddd;">${quality}</td>
+                    <td style="padding: 12px; border-bottom: 1px solid #ddd;">
+                        <button onclick="viewTestProject('${p.id}')" style="padding: 6px 12px; background: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; margin-right: 5px;">View</button>
+                        <button onclick="updateTestProject('${p.id}')" style="padding: 6px 12px; background: #2196F3; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">Update</button>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+    } catch (error) {
+        console.error('Failed to load test projects:', error);
+        const tbody = document.getElementById('test-projects-tbody');
+        if (tbody) {
+            tbody.innerHTML = `<tr><td colspan="7" style="padding: 20px; text-align: center; color: #f44336;">Error loading projects: ${error.message}</td></tr>`;
+        }
+    }
+}
+
+function getVarianceClass(variance) {
+    if (variance === null || variance === undefined) return '';
+    const absVariance = Math.abs(variance);
+    if (absVariance <= 10) return 'variance-good';
+    if (absVariance <= 20) return 'variance-medium';
+    return 'variance-bad';
+}
+
+function formatCurrency(amount) {
+    if (!amount) return '₹0';
+    return '₹' + amount.toLocaleString('en-IN');
+}
+
+function viewTestProject(projectId) {
+    // Open project in new window or navigate to project view
+    window.open(`/api/projects/${projectId}/output/html`, '_blank');
+}
+
+function updateTestProject(projectId) {
+    // Prompt for actual cost and timeline
+    const actualCost = prompt('Enter actual cost (₹):');
+    const actualTimeline = prompt('Enter actual timeline (days):');
+    const qualityScore = prompt('Rate output quality (1-10):');
+    
+    if (actualCost || actualTimeline || qualityScore) {
+        submitTestFeedback(projectId, {
+            cost: actualCost ? parseFloat(actualCost) : undefined,
+            timeline: actualTimeline ? parseInt(actualTimeline) : undefined,
+            output_quality_score: qualityScore ? parseInt(qualityScore) : undefined
+        });
+    }
+}
+
+async function submitTestFeedback(projectId, feedback) {
+    try {
+        const response = await fetch(`/api/testing/feedback/${projectId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(feedback)
+        });
+        
+        if (!response.ok) {
+            throw new Error('Failed to submit feedback');
+        }
+        
+        alert('Feedback submitted successfully!');
+        await loadTestProjects();
+        await loadTestingDashboard();
+    } catch (error) {
+        console.error('Failed to submit feedback:', error);
+        alert('Failed to submit feedback. Please try again.');
+    }
+}
+
+function initializeTestingDashboard() {
+    const testForm = document.getElementById('test-form');
+    if (testForm) {
+        testForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const formData = new FormData(e.target);
+            const requirements = formData.get('requirements');
+            const category = formData.get('category');
+            
+            if (!requirements || !requirements.trim()) {
+                alert('Please enter requirements');
+                return;
+            }
+            
+            // Show loading
+            const submitBtn = testForm.querySelector('button[type="submit"]');
+            const originalText = submitBtn.textContent;
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Processing...';
+            
+            try {
+                // Process through normal scope endpoint with test mode
+                const response = await fetch('/api/scope', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        input: requirements,
+                        outputVersion: 'v2',
+                        testMode: true,
+                        testCategory: category
+                    })
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Failed to process project');
+                }
+                
+                const result = await response.json();
+                
+                // Record test metrics
+                if (result.projectId) {
+                    await fetch('/api/testing/record', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            projectId: result.projectId,
+                            category: category,
+                            processingTime: result.processingTime || 0
+                        })
+                    });
+                }
+                
+                // Reload dashboard
+                await loadTestingDashboard();
+                
+                // Reset form
+                testForm.reset();
+                
+                alert('Test project processed and tracked successfully!');
+            } catch (error) {
+                console.error('Failed to process test project:', error);
+                alert('Failed to process project. Please try again.');
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = originalText;
+            }
+        });
+    }
+}
+
+// Checkpoint Mode Functions
+let currentSessionId = null;
+let currentCheckpointId = null;
+
+// Entry Point Functions
+function startExpressMode() {
+    // Hide entry selector
+    const entrySelector = document.getElementById('entry-selector');
+    if (entrySelector) {
+        entrySelector.style.display = 'none';
+    }
+    
+    // Show input container
+    const inputContainer = document.getElementById('input-container');
+    if (inputContainer) {
+        inputContainer.style.display = 'block';
+    }
+    
+    // Show execution mode selector (for reference, but hidden visually)
+    const modeSelector = document.getElementById('execution-mode-selector');
+    if (modeSelector) {
+        modeSelector.style.display = 'none';
+    }
+    
+    // Set express mode radio if it exists
+    const expressRadio = document.querySelector('input[name="executionMode"][value="express"]');
+    if (expressRadio) {
+        expressRadio.checked = true;
+    }
+    
+    // Set mode internally
+    window.currentMode = 'express';
+    
+    // Focus on input field
+    const textInput = document.getElementById('textInput');
+    if (textInput) {
+        setTimeout(() => textInput.focus(), 100);
+    }
+    
+    // Track metrics
+    trackEntryMetrics('express');
+}
+
+function startConversationMode() {
+    // Hide entry selector
+    const entrySelector = document.getElementById('entry-selector');
+    if (entrySelector) {
+        entrySelector.style.display = 'none';
+    }
+    
+    // Hide input container
+    const inputContainer = document.getElementById('input-container');
+    if (inputContainer) {
+        inputContainer.style.display = 'none';
+    }
+    
+    // Show conversation container
+    const conversationContainer = document.getElementById('conversation-container');
+    if (conversationContainer) {
+        conversationContainer.style.display = 'block';
+    }
+    
+    // Set conversation mode radio if it exists
+    const conversationRadio = document.querySelector('input[name="executionMode"][value="conversation"]');
+    if (conversationRadio) {
+        conversationRadio.checked = true;
+    }
+    
+    // Initialize conversation manager if not already done
+    if (!window.conversationManager) {
+        window.conversationManager = new ConversationManager();
+        window.conversationManager.init();
+    }
+    
+    // Set mode internally
+    window.currentMode = 'conversation';
+    
+    // Track metrics
+    trackEntryMetrics('conversation');
+}
+
+function checkProjectComplexity(input) {
+    if (!input || typeof input !== 'string') {
+        return false;
+    }
+    
+    const complexitySignals = [
+        'enterprise', 'complex', 'integration', 'microservices',
+        'multiple teams', 'compliance', 'regulated', 'multi-region',
+        'distributed', 'scalable', 'high availability', 'disaster recovery'
+    ];
+    
+    const inputLower = input.toLowerCase();
+    const hasComplexity = complexitySignals.some(signal => 
+        inputLower.includes(signal)
+    );
+    
+    if (hasComplexity && window.currentMode === 'express') {
+        // Suggest checkpoint mode
+        showComplexityWarning();
+        return true;
+    }
+    
+    return false;
+}
+
+function showComplexityWarning() {
+    // Create warning modal or notification
+    const warning = document.createElement('div');
+    warning.className = 'complexity-warning';
+    warning.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: #FEF3C7;
+        border: 2px solid #F59E0B;
+        border-radius: 8px;
+        padding: 20px;
+        max-width: 400px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        z-index: 10000;
+    `;
+    warning.innerHTML = `
+        <h4 style="margin-bottom: 10px; color: #92400E;">⚠️ Complex Project Detected</h4>
+        <p style="margin-bottom: 15px; color: #78350F;">This project seems complex. Consider using Checkpoint Mode for step-by-step guidance.</p>
+        <button onclick="switchToCheckpointMode()" style="padding: 8px 16px; background: #F59E0B; color: white; border: none; border-radius: 6px; cursor: pointer; margin-right: 10px;">Use Checkpoint Mode</button>
+        <button onclick="this.parentElement.remove()" style="padding: 8px 16px; background: #E5E7EB; color: #374151; border: none; border-radius: 6px; cursor: pointer;">Continue with Express</button>
+    `;
+    document.body.appendChild(warning);
+    
+    // Auto-remove after 10 seconds
+    setTimeout(() => {
+        if (warning.parentElement) {
+            warning.remove();
+        }
+    }, 10000);
+}
+
+function switchToCheckpointMode() {
+    // Remove warning
+    const warning = document.querySelector('.complexity-warning');
+    if (warning) {
+        warning.remove();
+    }
+    
+    // Switch to checkpoint mode
+    const checkpointRadio = document.querySelector('input[name="executionMode"][value="checkpoint"]');
+    if (checkpointRadio) {
+        checkpointRadio.checked = true;
+        handleModeChange('checkpoint');
+    }
+}
+
+function resumeLastProject() {
+    // Check for last project in localStorage
+    const lastProject = localStorage.getItem('lastProjectId');
+    if (lastProject) {
+        window.location.href = `/?projectId=${lastProject}`;
+    } else {
+        // Show resume conversation modal
+        if (typeof showResumeConversationModal === 'function') {
+            showResumeConversationModal();
+        }
+    }
+}
+
+function trackEntryMetrics(mode) {
+    // Track entry metrics
+    const metrics = {
+        entryTime: Date.now(),
+        mode: mode,
+        pageLoadTime: window.pageLoadTime || Date.now()
+    };
+    
+    const entryToFirstAction = metrics.entryTime - metrics.pageLoadTime;
+    localStorage.setItem('ux_metrics_entry', JSON.stringify({
+        ...metrics,
+        entryToFirstAction: entryToFirstAction
+    }));
+    
+    console.log('Entry metrics:', {
+        mode: mode,
+        entryToFirstAction: entryToFirstAction + 'ms'
+    });
+}
+
+function initializeCheckpointMode() {
+    // Handle mode switching for express, checkpoint, and conversation modes
+    const modeRadios = document.querySelectorAll('input[name="executionMode"]');
+    modeRadios.forEach(radio => {
+        radio.addEventListener('change', (e) => {
+            handleModeChange(e.target.value);
+        });
+    });
+    
+    // Check if entry selector should be shown (first visit)
+    const entrySelector = document.getElementById('entry-selector');
+    const hasSelectedMode = localStorage.getItem('hasSelectedMode');
+    
+    if (!hasSelectedMode && entrySelector) {
+        // First visit - show entry selector
+        entrySelector.style.display = 'block';
+        const inputContainer = document.getElementById('input-container');
+        if (inputContainer) {
+            inputContainer.style.display = 'none';
+        }
+    } else {
+        // Returning user - show last mode or default
+        entrySelector.style.display = 'none';
+        const currentMode = document.querySelector('input[name="executionMode"]:checked');
+        if (currentMode) {
+            handleModeChange(currentMode.value);
+        } else {
+            // Default to express mode
+            const expressRadio = document.querySelector('input[name="executionMode"][value="express"]');
+            if (expressRadio) {
+                expressRadio.checked = true;
+                handleModeChange('express');
+            }
+        }
+    }
+}
+
+function handleModeChange(mode) {
+    // Get container elements
+    const inputSection = document.querySelector('.input-section');
+    const checkpointProgress = document.getElementById('checkpoint-progress');
+    const conversationContainer = document.getElementById('conversation-container');
+    
+    // Hide all containers first
+    if (checkpointProgress) {
+        checkpointProgress.style.display = 'none';
+    }
+    if (conversationContainer) {
+        conversationContainer.style.display = 'none';
+    }
+    
+    // Show selected mode container
+    if (mode === 'express') {
+        // Show input section for express mode
+        if (inputSection) {
+            inputSection.style.display = 'block';
+            
+            // Show all form elements
+            const projectDetailsSection = inputSection.querySelector('.project-details-section');
+            const inputForm = inputSection.querySelector('form');
+            const fileUploadSection = inputSection.querySelector('.file-upload-section');
+            const generateButton = inputSection.querySelector('button[type="submit"]');
+            
+            if (projectDetailsSection) projectDetailsSection.style.display = 'block';
+            if (inputForm) inputForm.style.display = 'block';
+            if (fileUploadSection) fileUploadSection.style.display = 'block';
+            if (generateButton) generateButton.style.display = 'block';
+        }
+    } else if (mode === 'checkpoint') {
+        // Show input section and checkpoint progress for checkpoint mode
+        if (inputSection) {
+            inputSection.style.display = 'block';
+            
+            // Show all form elements
+            const projectDetailsSection = inputSection.querySelector('.project-details-section');
+            const inputForm = inputSection.querySelector('form');
+            const fileUploadSection = inputSection.querySelector('.file-upload-section');
+            const generateButton = inputSection.querySelector('button[type="submit"]');
+            
+            if (projectDetailsSection) projectDetailsSection.style.display = 'block';
+            if (inputForm) inputForm.style.display = 'block';
+            if (fileUploadSection) fileUploadSection.style.display = 'block';
+            if (generateButton) generateButton.style.display = 'block';
+        }
+        if (checkpointProgress) {
+            checkpointProgress.style.display = 'block';
+        }
+    } else if (mode === 'conversation') {
+        // For conversation mode, keep input-section visible but hide form elements
+        // Note: conversation-container is inside input-section
+        if (inputSection) {
+            // Keep input-section visible
+            inputSection.style.display = 'block';
+            
+            // Hide the input form elements
+            const projectDetailsSection = inputSection.querySelector('.project-details-section');
+            const inputForm = inputSection.querySelector('form');
+            const fileUploadSection = inputSection.querySelector('.file-upload-section');
+            const generateButton = inputSection.querySelector('button[type="submit"]');
+            
+            // Hide form elements
+            if (projectDetailsSection) projectDetailsSection.style.display = 'none';
+            if (inputForm) inputForm.style.display = 'none';
+            if (fileUploadSection) fileUploadSection.style.display = 'none';
+            if (generateButton) generateButton.style.display = 'none';
+            
+            // Keep mode selector visible
+            const modeSelector = inputSection.querySelector('.execution-mode-selector');
+            if (modeSelector) modeSelector.style.display = 'block';
+        }
+        
+        // Show conversation container
+        if (conversationContainer) {
+            conversationContainer.style.display = 'block';
+        }
+        
+        // Initialize conversation manager if not already done
+        if (!window.conversationManager) {
+            window.conversationManager = new ConversationManager();
+            window.conversationManager.init();
+        }
+    }
+}
+
+function updateCheckpointProgress(currentCheckpoint) {
+    const progressBar = document.getElementById('checkpoint-progress');
+    if (!progressBar) return;
+    
+    progressBar.style.display = 'block';
+    
+    // Map checkpoint IDs to step numbers
+    const checkpointMap = {
+        'cp0_input': 0,
+        'cp1_prescription': 1,
+        'cp2_scope': 2,
+        'cp3_estimate': 3,
+        'cp4_blueprint': 4
+    };
+    
+    const currentStep = checkpointMap[currentCheckpoint] || 0;
+    
+    // Update progress steps
+    document.querySelectorAll('.progress-step').forEach((step, index) => {
+        step.classList.remove('active', 'completed');
+        if (index < currentStep) {
+            step.classList.add('completed');
+        } else if (index === currentStep) {
+            step.classList.add('active');
+        }
+    });
+    
+    // Update progress line
+    const progressLine = document.getElementById('progress-line-active');
+    if (progressLine) {
+        const percentage = (currentStep / 4) * 100;
+        progressLine.style.width = `${percentage}%`;
+    }
+}
+
+function displayPrescription(prescription) {
+    const modal = document.getElementById('prescription-modal');
+    const content = document.getElementById('prescription-content');
+    
+    if (!modal || !content) return;
+    
+    let html = `<div class="prescription-match">
+        <div class="prescription-match-score">Match Score: ${prescription.matchScore}%</div>
+        <div>Confidence: ${(prescription.confidence * 100).toFixed(0)}%</div>
+    </div>`;
+    
+    if (prescription.prescription) {
+        const p = prescription.prescription;
+        html += `<h3>Recommended Architecture</h3>`;
+        html += `<p><strong>Type:</strong> ${p.architecture.type}</p>`;
+        html += `<p><strong>Pattern:</strong> ${p.architecture.pattern}</p>`;
+        html += `<p><strong>Services:</strong> ${p.architecture.services.join(', ')}</p>`;
+        html += `<h3>Technology Stack</h3>`;
+        html += `<p><strong>Frontend:</strong> ${p.tech.frontend}</p>`;
+        html += `<p><strong>Backend:</strong> ${p.tech.backend}</p>`;
+        html += `<p><strong>Database:</strong> ${p.tech.database}</p>`;
+        html += `<h3>Team & Timeline</h3>`;
+        html += `<p><strong>Team Size:</strong> ${p.team} developers</p>`;
+        html += `<p><strong>Timeline:</strong> ${p.timeline}</p>`;
+        html += `<p><strong>Rationale:</strong> ${p.rationale}</p>`;
+    }
+    
+    content.innerHTML = html;
+    modal.classList.add('active');
+}
+
+async function handleCheckpointDecision(decisionType) {
+    if (!currentSessionId || !currentCheckpointId) {
+        console.error('No active checkpoint session');
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/scope/checkpoint', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                sessionId: currentSessionId,
+                checkpointId: currentCheckpointId,
+                decisionType: decisionType,
+                decisionData: {}
+            })
+        });
+        
+        if (!response.ok) {
+            throw new Error('Failed to save checkpoint decision');
+        }
+        
+        const result = await response.json();
+        
+        // Close modals
+        document.getElementById('prescription-modal')?.classList.remove('active');
+        document.getElementById('checkpoint-decision-modal')?.classList.remove('active');
+        
+        if (decisionType === 'approve') {
+            // Resume execution from checkpoint
+            if (result.nextCheckpoint) {
+                await resumeFromCheckpoint(currentSessionId, result.nextCheckpoint);
+            } else {
+                alert('Checkpoint approved. Execution will continue.');
+            }
+        } else if (decisionType === 'pause') {
+            // Save checkpoint state for later resume
+            saveCheckpointForResume(currentSessionId, currentCheckpointId);
+            alert('Execution paused. You can resume later from the checkpoint list.');
+        } else if (decisionType === 'modify') {
+            alert('Modification feature coming soon.');
+        }
+    } catch (error) {
+        console.error('Failed to handle checkpoint decision:', error);
+        alert('Failed to save decision. Please try again.');
+    }
+}
+
+async function resumeFromCheckpoint(sessionId, checkpointId) {
+    try {
+        const response = await fetch('/api/scope/resume', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                sessionId: sessionId,
+                checkpointId: checkpointId
+            })
+        });
+        
+        if (!response.ok) {
+            throw new Error('Failed to resume from checkpoint');
+        }
+        
+        const result = await response.json();
+        
+        if (result.success && result.resumeData) {
+            // Restore checkpoint state
+            restoreCheckpointState(result.resumeData);
+            alert('Checkpoint restored. Execution will continue.');
+        }
+    } catch (error) {
+        console.error('Failed to resume checkpoint:', error);
+        alert('Failed to resume checkpoint. Please try again.');
+    }
+}
+
+function saveCheckpointForResume(sessionId, checkpointId) {
+    // Store in localStorage for easy access
+    const checkpoints = JSON.parse(localStorage.getItem('savedCheckpoints') || '[]');
+    checkpoints.push({
+        sessionId: sessionId,
+        checkpointId: checkpointId,
+        timestamp: Date.now()
+    });
+    localStorage.setItem('savedCheckpoints', JSON.stringify(checkpoints));
+}
+
+function restoreCheckpointState(resumeData) {
+    // Restore state from checkpoint
+    if (resumeData.state) {
+        // Update UI with restored state
+        currentSessionId = resumeData.sessionId;
+        currentCheckpointId = resumeData.checkpointId;
+        
+        // Update progress bar
+        const checkpointMap = {
+            'cp0_input': 0,
+            'cp1_prescription': 1,
+            'cp2_scope': 2,
+            'cp3_estimate': 3,
+            'cp4_blueprint': 4
+        };
+        
+        const step = checkpointMap[currentCheckpointId] || 0;
+        updateCheckpointProgress(step);
+    }
 }

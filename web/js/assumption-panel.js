@@ -36,6 +36,11 @@ function displayAssumptions(assumptions) {
 
     categories.forEach(category => {
         const categoryAssumptions = grouped[category];
+        // Defensive check: ensure categoryAssumptions is an array
+        if (!Array.isArray(categoryAssumptions) || categoryAssumptions.length === 0) {
+            return; // Skip this category if not an array or empty
+        }
+        
         const categoryName = category.charAt(0).toUpperCase() + category.slice(1);
 
         html += `

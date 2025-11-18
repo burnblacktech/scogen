@@ -1,4 +1,19 @@
+const { getComplexityDays } = require('../utils/module-utils');
+
+/**
+ * Generator Module
+ * 
+ * Transforms refined technical scope into a human-readable plan with steps,
+ * pseudocode, and timeline. Generates implementation guidance.
+ * 
+ * @class Generator
+ */
 class Generator {
+  /**
+   * Create a Generator instance
+   * @param {Object} library - Library instance
+   * @param {Object} logger - Logger instance
+   */
   constructor(library, logger) {
     this.library = library;
     this.logger = logger;
@@ -98,6 +113,18 @@ class Generator {
     };
   }
 
+  /**
+   * Generate implementation plan from refined scope
+   * 
+   * @param {Object} refinedScope - Refined scope with modules and edges
+   * @param {Array<Object>} refinedScope.modules - Refined modules
+   * @param {Array} refinedScope.edges - Refined edges
+   * @param {Object} refinedScope.feasibility - Feasibility score
+   * @param {string} budgetTier - Budget tier
+   * @param {Object} psychProfile - Psychological profile
+   * @param {Object} domainContext - Domain context
+   * @returns {Object} Plan object with overview, modules, steps, timeline, and risks
+   */
   generate(refinedScope, budgetTier, psychProfile, domainContext) {
     const { modules, edges, feasibility } = refinedScope;
 
@@ -164,7 +191,7 @@ class Generator {
           pseudocode.note = 'Custom module—generic template used';
         }
 
-        const baseEffort = { low: 1, med: 2, high: 4 }[mod.complexity] || 2;
+        const baseEffort = getComplexityDays(mod.complexity);
         let effort = baseEffort;
 
         if (reuse.available) {
@@ -290,7 +317,7 @@ class Generator {
     let phase2Days = 0;
     if (phase2Modules.length > 0) {
       phase2Days = phase2Modules.reduce((sum, mod) => {
-        const baseEffort = { low: 1, med: 2, high: 4 }[mod.complexity] || 2;
+        const baseEffort = getComplexityDays(mod.complexity);
         return sum + baseEffort;
       }, 0);
     }

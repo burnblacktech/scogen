@@ -159,7 +159,8 @@ class ChainExecutorStep5 extends ChainExecutorStep4 {
       });
 
       // Log if step took too long
-      if (performance.now() - stepStartTime > 30000) { // 30 seconds
+      const stepTimeout = this.config?.get?.('performance.stepTimeout') || 30000; // 30 seconds default
+      if (performance.now() - stepStartTime > stepTimeout) {
         this.logger.warn('Step 5 took longer than expected', {
           duration: `${stepDuration}s`,
           scenariosCount: scenarioResults.scenarios.length

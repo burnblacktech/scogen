@@ -2,11 +2,13 @@
 // Performance monitoring and optimization utilities
 
 class PerformanceMonitor {
-  constructor(logger) {
+  constructor(logger, config = null) {
     this.logger = logger;
+    this.config = config;
     this.operationTimings = new Map();
     this.slowOperations = [];
-    this.SLOW_OPERATION_THRESHOLD = 5000; // 5 seconds
+    // Load threshold from config if available
+    this.SLOW_OPERATION_THRESHOLD = config?.get?.('performance.slowOperationThreshold') || 5000; // 5 seconds
   }
 
   /**

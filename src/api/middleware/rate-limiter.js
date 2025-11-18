@@ -153,21 +153,38 @@ class RateLimiter {
   }
 }
 
-// Create default rate limiter instance
+// Create rate limiter instances (will be configured with actual config in routes)
+// Default instances for backward compatibility
 const defaultRateLimiter = new RateLimiter({
   windowMs: 15 * 60 * 1000, // 15 minutes
   maxRequests: 100 // 100 requests per 15 minutes
 });
 
-// Create stricter rate limiter for /api/scope endpoint
 const scopeRateLimiter = new RateLimiter({
   windowMs: 60 * 60 * 1000, // 1 hour
   maxRequests: 20 // 20 requests per hour (more expensive operation)
 });
 
+// Factory function to create rate limiters from config
+function createRateLimiters(config) {
+  const rateLimitConfig = config?.get?.('rateLimiting') || {};
+  
+  return {
+    default: new RateLimiter({
+      windowMs: rateLimitConfig.windowMs || 15 * 60 * 1000,
+      maxRequests: rateLimitConfig.maxRequests || 100
+    }),
+    scope: new RateLimiter({
+      windowMs: rateLimitConfig.scopeWindowMs || 60 * 60 * 1000,
+      maxRequests: rateLimitConfig.scopeMaxRequests || 20
+    })
+  };
+}
+
 module.exports = {
   RateLimiter,
   defaultRateLimiter,
-  scopeRateLimiter
+  scopeRateLimiter,
+  createRateLimiters
 };
 

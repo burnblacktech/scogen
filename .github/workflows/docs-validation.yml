@@ -1,0 +1,119 @@
+name: Documentation Validation
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'src/modules/level-generator.js'
+      - 'src/modules/document-renderer.js'
+      - 'src/modules/scope-verifier.js'
+      - 'scripts/validate-docs.js'
+      - 'scripts/compute-doc-metrics.js'
+      - '.github/workflows/docs-validation.yml'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - 'src/modules/level-generator.js'
+      - 'src/modules/document-renderer.js'
+      - 'src/modules/scope-verifier.js'
+      - 'scripts/validate-docs.js'
+      - 'scripts/compute-doc-metrics.js'
+  workflow_dispatch:
+
+jobs:
+  validate-docs:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Setup database
+        run: npm run setup-db
+        env:
+          DB_V2_PATH: ./scogen-v2.db
+      
+      - name: Run database migrations
+        run: npm run db:migrate
+        env:
+          DB_V2_PATH: ./scogen-v2.db
+      
+      - name: Generate golden scopes
+        run: npm run docs:golden
+        env:
+          DB_V2_PATH: ./scogen-v2.db
+      
+      - name: Run regression tests
+        run: npm run docs:regression
+        env:
+          DB_V2_PATH: ./scogen-v2.db
+        continue-on-error: true
+      
+      - name: Validate golden scopes
+        run: |
+          for project in GOLDEN-HRMS GOLDEN-SAAS GOLDEN-ECOMM; do
+            echo "Validating $project..."
+            npm run docs:validate -- $project || exit 1
+          done
+        env:
+          DB_V2_PATH: ./scogen-v2.db
+      
+      - name: Compute metrics
+        run: |
+          for project in GOLDEN-HRMS GOLDEN-SAAS GOLDEN-ECOMM; do
+            echo "Computing metrics for $project..."
+            npm run docs:metrics -- $project || true
+          done
+        env:
+          DB_V2_PATH: ./scogen-v2.db
+      
+      - name: Check coverage thresholds
+        run: |
+          node -e "
+            const db = require('better-sqlite3')('./scogen-v2.db');
+            const projects = ['GOLDEN-HRMS', 'GOLDEN-SAAS', 'GOLDEN-ECOMM'];
+            let failed = false;
+            
+            projects.forEach(code => {
+              const project = db.prepare('SELECT id FROM projects WHERE project_code = ?').get(code);
+              if (!project) return;
+              
+              const metrics = db.prepare(\`
+                SELECT level, metric_name, metric_value 
+                FROM documentation_metrics 
+                WHERE project_id = ? AND metric_name IN ('module_coverage', 'pseudocode_coverage', 'crossref_pass_rate')
+                ORDER BY level, metric_name
+              \`).all(project.id);
+              
+              metrics.forEach(m => {
+                if (m.metric_name === 'module_coverage' && m.metric_value < 1.0) {
+                  console.error(\`❌ \${code} Level \${m.level}: Module coverage \${(m.metric_value * 100).toFixed(1)}% < 100%\`);
+                  failed = true;
+                }
+                if (m.metric_name === 'pseudocode_coverage' && m.level === 5 && m.metric_value < 0.95) {
+                  console.error(\`❌ \${code} Level 5: Pseudocode coverage \${(m.metric_value * 100).toFixed(1)}% < 95%\`);
+                  failed = true;
+                }
+                if (m.metric_name === 'crossref_pass_rate' && m.metric_value < 1.0) {
+                  console.error(\`❌ \${code} Level \${m.level}: Cross-ref pass rate \${(m.metric_value * 100).toFixed(1)}% < 100%\`);
+                  failed = true;
+                }
+              });
+            });
+            
+            db.close();
+            if (failed) process.exit(1);
+            console.log('✅ All coverage thresholds met');
+          "
+        env:
+          DB_V2_PATH: ./scogen-v2.db
+

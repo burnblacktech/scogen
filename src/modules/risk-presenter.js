@@ -398,7 +398,8 @@ class RiskPresenter {
   }
 
   formatCurrency(amount) {
-    return '₹' + amount.toLocaleString('en-IN');
+    const Formatters = require('../utils/formatters');
+    return Formatters.formatCurrency(amount);
   }
 }
 

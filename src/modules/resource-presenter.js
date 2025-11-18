@@ -340,7 +340,8 @@ class ResourcePresenter {
 
   // Helper methods
   formatCurrency(amount) {
-    return '₹' + amount.toLocaleString('en-IN');
+    const Formatters = require('../utils/formatters');
+    return Formatters.formatCurrency(amount);
   }
 
   getResourceTitle(key) {

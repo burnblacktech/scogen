@@ -188,8 +188,14 @@ class InputSanitizer {
       return { valid: false, errors: ['projectDetails must be an object'] };
     }
 
-    // Validate projectScale
-    if (projectDetails.projectScale !== undefined) {
+    // Helper function to check if a value is effectively empty (undefined, null, or empty string)
+    const isEmpty = (value) => {
+      return value === undefined || value === null || 
+             (typeof value === 'string' && value.trim() === '');
+    };
+
+    // Validate projectScale (skip if empty)
+    if (!isEmpty(projectDetails.projectScale)) {
       const validScales = ['startup', 'sme', 'enterprise', 'enterprise-plus'];
       if (!validScales.includes(projectDetails.projectScale)) {
         errors.push(`Invalid projectScale: "${projectDetails.projectScale}". Must be one of: ${validScales.join(', ')}`);
@@ -197,32 +203,52 @@ class InputSanitizer {
     }
 
     // Validate marketRegion (if provided, should be string)
-    if (projectDetails.marketRegion !== undefined && typeof projectDetails.marketRegion !== 'string') {
+    if (!isEmpty(projectDetails.marketRegion) && typeof projectDetails.marketRegion !== 'string') {
       errors.push('marketRegion must be a string');
     }
 
     // Validate businessModel (if provided, should be string)
-    if (projectDetails.businessModel !== undefined && typeof projectDetails.businessModel !== 'string') {
+    if (!isEmpty(projectDetails.businessModel) && typeof projectDetails.businessModel !== 'string') {
       errors.push('businessModel must be a string');
     }
 
     // Validate maxBudget (if provided, should be positive number)
-    if (projectDetails.maxBudget !== undefined) {
-      const budget = typeof projectDetails.maxBudget === 'string' 
-        ? parseFloat(projectDetails.maxBudget) 
-        : projectDetails.maxBudget;
-      if (isNaN(budget) || budget < 0) {
-        errors.push('maxBudget must be a positive number');
+    // Note: Budget can be a string like "₹5L" which will be parsed later, so we check for non-empty only
+    if (!isEmpty(projectDetails.maxBudget)) {
+      // For numeric strings like "50000", try to parse
+      // For formatted strings like "₹5L", they will be parsed later, so just check it's not empty
+      if (typeof projectDetails.maxBudget === 'string') {
+        // If it's a numeric string, validate it's a positive number
+        const numValue = parseFloat(projectDetails.maxBudget.trim());
+        if (!isNaN(numValue) && numValue < 0) {
+          errors.push('maxBudget must be a positive number');
+        }
+        // If it's not numeric (e.g., "₹5L"), it will be parsed later - accept it for now
+      } else if (typeof projectDetails.maxBudget === 'number') {
+        // Direct number validation
+        if (isNaN(projectDetails.maxBudget) || projectDetails.maxBudget < 0) {
+          errors.push('maxBudget must be a positive number');
+        }
       }
     }
 
     // Validate targetDeadline (if provided, should be positive number)
-    if (projectDetails.targetDeadline !== undefined) {
-      const deadline = typeof projectDetails.targetDeadline === 'string' 
-        ? parseFloat(projectDetails.targetDeadline) 
-        : projectDetails.targetDeadline;
-      if (isNaN(deadline) || deadline < 0) {
-        errors.push('targetDeadline must be a positive number');
+    // Note: Deadline can be a string like "3 months" which will be parsed later, so we check for non-empty only
+    if (!isEmpty(projectDetails.targetDeadline)) {
+      // For numeric strings, try to parse
+      // For formatted strings like "3 months", they will be parsed later, so just check it's not empty
+      if (typeof projectDetails.targetDeadline === 'string') {
+        // If it's a numeric string, validate it's a positive number
+        const numValue = parseFloat(projectDetails.targetDeadline.trim());
+        if (!isNaN(numValue) && numValue < 0) {
+          errors.push('targetDeadline must be a positive number');
+        }
+        // If it's not numeric (e.g., "3 months"), it will be parsed later - accept it for now
+      } else if (typeof projectDetails.targetDeadline === 'number') {
+        // Direct number validation
+        if (isNaN(projectDetails.targetDeadline) || projectDetails.targetDeadline < 0) {
+          errors.push('targetDeadline must be a positive number');
+        }
       }
     }
 
@@ -315,6 +341,152 @@ class InputSanitizer {
       // If not valid JSON, escape it
       return JSON.stringify(sanitized);
     }
+  }
+
+  /**
+   * Validate object against schema
+   * @param {any} obj - Object to validate
+   * @param {Object} schema - Schema definition
+   * @returns {{valid: boolean, errors: string[]}} - Validation result
+   */
+  static validateSchema(obj, schema) {
+    const errors = [];
+
+    if (!schema || typeof schema !== 'object') {
+      return { valid: false, errors: ['Invalid schema definition'] };
+    }
+
+    // Required fields
+    if (schema.required && Array.isArray(schema.required)) {
+      schema.required.forEach(field => {
+        if (obj[field] === undefined || obj[field] === null) {
+          errors.push(`Missing required field: ${field}`);
+        }
+      });
+    }
+
+    // Type validation
+    if (schema.properties && typeof schema.properties === 'object') {
+      Object.keys(schema.properties).forEach(field => {
+        const fieldSchema = schema.properties[field];
+        const value = obj[field];
+
+        // Skip if field is optional and not provided
+        if (value === undefined && !schema.required?.includes(field)) {
+          return;
+        }
+
+        // Type check
+        if (fieldSchema.type) {
+          const expectedType = fieldSchema.type;
+          const actualType = Array.isArray(value) ? 'array' : typeof value;
+
+          if (expectedType === 'array' && !Array.isArray(value)) {
+            errors.push(`Field ${field} must be an array`);
+          } else if (expectedType !== 'array' && actualType !== expectedType) {
+            errors.push(`Field ${field} must be of type ${expectedType}, got ${actualType}`);
+          }
+        }
+
+        // Enum validation
+        if (fieldSchema.enum && !fieldSchema.enum.includes(value)) {
+          errors.push(`Field ${field} must be one of: ${fieldSchema.enum.join(', ')}`);
+        }
+
+        // Min/Max validation for numbers
+        if (fieldSchema.type === 'number' && typeof value === 'number') {
+          if (fieldSchema.minimum !== undefined && value < fieldSchema.minimum) {
+            errors.push(`Field ${field} must be at least ${fieldSchema.minimum}`);
+          }
+          if (fieldSchema.maximum !== undefined && value > fieldSchema.maximum) {
+            errors.push(`Field ${field} must be at most ${fieldSchema.maximum}`);
+          }
+        }
+
+        // Min/Max length validation for strings
+        if (fieldSchema.type === 'string' && typeof value === 'string') {
+          if (fieldSchema.minLength !== undefined && value.length < fieldSchema.minLength) {
+            errors.push(`Field ${field} must be at least ${fieldSchema.minLength} characters`);
+          }
+          if (fieldSchema.maxLength !== undefined && value.length > fieldSchema.maxLength) {
+            errors.push(`Field ${field} must be at most ${fieldSchema.maxLength} characters`);
+          }
+        }
+
+        // Pattern validation for strings
+        if (fieldSchema.pattern && typeof value === 'string') {
+          const regex = new RegExp(fieldSchema.pattern);
+          if (!regex.test(value)) {
+            errors.push(`Field ${field} does not match required pattern`);
+          }
+        }
+
+        // Nested object validation
+        if (fieldSchema.type === 'object' && fieldSchema.properties && typeof value === 'object' && !Array.isArray(value)) {
+          const nestedResult = this.validateSchema(value, fieldSchema);
+          if (!nestedResult.valid) {
+            errors.push(...nestedResult.errors.map(e => `${field}.${e}`));
+          }
+        }
+
+        // Array validation
+        if (fieldSchema.type === 'array' && Array.isArray(value) && fieldSchema.items) {
+          value.forEach((item, index) => {
+            if (fieldSchema.items.type === 'object' && fieldSchema.items.properties) {
+              const itemResult = this.validateSchema(item, fieldSchema.items);
+              if (!itemResult.valid) {
+                errors.push(...itemResult.errors.map(e => `${field}[${index}].${e}`));
+              }
+            } else if (fieldSchema.items.type) {
+              const itemType = Array.isArray(item) ? 'array' : typeof item;
+              if (itemType !== fieldSchema.items.type) {
+                errors.push(`Field ${field}[${index}] must be of type ${fieldSchema.items.type}`);
+              }
+            }
+          });
+        }
+      });
+    }
+
+    return {
+      valid: errors.length === 0,
+      errors
+    };
+  }
+
+  /**
+   * Validate project details against schema
+   * @param {any} projectDetails - Project details object
+   * @returns {{valid: boolean, errors: string[]}} - Validation result
+   */
+  static validateProjectDetailsSchema(projectDetails) {
+    const schema = {
+      type: 'object',
+      properties: {
+        projectScale: {
+          type: 'string',
+          enum: ['startup', 'sme', 'enterprise', 'enterprise-plus']
+        },
+        marketRegion: {
+          type: 'string',
+          maxLength: 100
+        },
+        businessModel: {
+          type: 'string',
+          maxLength: 50
+        },
+        maxBudget: {
+          type: 'number',
+          minimum: 0
+        },
+        targetDeadline: {
+          type: 'number',
+          minimum: 0
+        }
+      }
+    };
+
+    return this.validateSchema(projectDetails, schema);
   }
 }
 

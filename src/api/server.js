@@ -41,11 +41,12 @@ class APIServer {
 
     // Middleware
     // Configure CORS with environment-based origins
+    const configOrigins = this.config.get('web.cors.allowedOrigins') || [];
     const allowedOrigins = process.env.CORS_ORIGINS 
       ? process.env.CORS_ORIGINS.split(',').map(origin => origin.trim())
       : (process.env.NODE_ENV === 'production' 
-          ? ['https://your-domain.com'] // Update with actual production domain
-          : ['http://localhost:3000', 'http://localhost:3001', 'http://127.0.0.1:3000']);
+          ? (configOrigins.length > 0 ? configOrigins : ['https://your-domain.com']) // Update with actual production domain
+          : (configOrigins.length > 0 ? configOrigins : ['http://localhost:3000', 'http://localhost:3001', 'http://127.0.0.1:3000']));
     
     this.app.use(cors({
       origin: (origin, callback) => {
@@ -78,6 +79,18 @@ class APIServer {
 
     // Initialize enhanced database (if enabled)
     await this.initializeEnhancedDatabase();
+
+    // Initialize memory monitoring (if enabled)
+    if (process.env.ENABLE_MEMORY_MONITORING === 'true' || process.env.NODE_ENV === 'production') {
+      const MemoryMonitor = require('../utils/memory-monitor');
+      this.memoryMonitor = new MemoryMonitor(this.logger, {
+        checkInterval: parseInt(process.env.MEMORY_CHECK_INTERVAL || '60000', 10),
+        warningThreshold: parseInt(process.env.MEMORY_WARNING_THRESHOLD || '524288000', 10), // 500MB
+        criticalThreshold: parseInt(process.env.MEMORY_CRITICAL_THRESHOLD || '1048576000', 10) // 1GB
+      });
+      this.memoryMonitor.start();
+      this.logger.info('Memory monitoring enabled');
+    }
 
     // API routes
     this.app.use('/api', routes(this.executor, this.db, this.logger));
@@ -172,6 +185,16 @@ class APIServer {
         this.logger.info('Project service database connections closed');
       } catch (error) {
         this.logger.warn('Error closing project service connections', { error: error.message });
+      }
+    }
+    
+    // Stop memory monitoring
+    if (this.memoryMonitor) {
+      try {
+        this.memoryMonitor.stop();
+        this.logger.info('Memory monitoring stopped');
+      } catch (error) {
+        this.logger.warn('Error stopping memory monitor', { error: error.message });
       }
     }
     

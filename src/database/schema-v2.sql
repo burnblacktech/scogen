@@ -162,20 +162,122 @@ CREATE TABLE IF NOT EXISTS estimation_accuracy (
     UNIQUE(module_name, domain)
 );
 
--- 7. Migrations tracking
+-- 7. Learning lessons (for duplicate filtering)
+CREATE TABLE IF NOT EXISTS learning_lessons (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    lesson_hash TEXT UNIQUE NOT NULL,
+    lesson_type TEXT NOT NULL,
+    lesson_content TEXT NOT NULL,
+    first_seen_project_id INTEGER,
+    occurrence_count INTEGER DEFAULT 1,
+    confidence_score REAL DEFAULT 0.5,
+    applied_count INTEGER DEFAULT 0,
+    success_rate REAL DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    last_applied_at DATETIME,
+    FOREIGN KEY (first_seen_project_id) REFERENCES projects (id)
+);
+
+-- 8. Migrations tracking
 CREATE TABLE IF NOT EXISTS migrations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     filename TEXT UNIQUE NOT NULL,
     executed_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
+-- 9. Checkpoint states (for prescriptive checkpoint mode)
+CREATE TABLE IF NOT EXISTS checkpoint_states (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,
+    checkpoint_id TEXT NOT NULL,
+    checkpoint_name TEXT NOT NULL,
+    state_data TEXT NOT NULL,
+    project_id INTEGER,
+    status TEXT DEFAULT 'active',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(session_id, checkpoint_id),
+    FOREIGN KEY (project_id) REFERENCES projects (id)
+);
+
+-- 10. Checkpoint decisions
+CREATE TABLE IF NOT EXISTS checkpoint_decisions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,
+    checkpoint_id TEXT NOT NULL,
+    decision_type TEXT NOT NULL,
+    decision_data TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (session_id) REFERENCES execution_sessions (session_id)
+);
+
+-- 11. Execution sessions
+CREATE TABLE IF NOT EXISTS execution_sessions (
+    session_id TEXT PRIMARY KEY,
+    project_id INTEGER,
+    current_checkpoint TEXT,
+    status TEXT DEFAULT 'running',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (project_id) REFERENCES projects (id)
+);
+
 -- Create indexes for performance
 CREATE INDEX IF NOT EXISTS idx_projects_client ON projects(client_id);
 CREATE INDEX IF NOT EXISTS idx_projects_status ON projects(status);
 CREATE INDEX IF NOT EXISTS idx_projects_code ON projects(project_code);
+CREATE INDEX IF NOT EXISTS idx_projects_created ON projects(created_at);
+CREATE INDEX IF NOT EXISTS idx_projects_completed ON projects(completed_at);
+CREATE INDEX IF NOT EXISTS idx_projects_industry ON projects(client_id, status);
 CREATE INDEX IF NOT EXISTS idx_clients_identifier ON clients(client_identifier);
+CREATE INDEX IF NOT EXISTS idx_clients_email ON clients(email);
+CREATE INDEX IF NOT EXISTS idx_clients_industry ON clients(industry);
 CREATE INDEX IF NOT EXISTS idx_patterns_lookup ON learned_patterns(pattern_type, domain, pattern_key);
+CREATE INDEX IF NOT EXISTS idx_patterns_domain ON learned_patterns(domain);
 CREATE INDEX IF NOT EXISTS idx_accuracy_lookup ON estimation_accuracy(module_name, domain);
+CREATE INDEX IF NOT EXISTS idx_accuracy_domain ON estimation_accuracy(domain);
 CREATE INDEX IF NOT EXISTS idx_hidden_costs_project ON hidden_cost_actuals(project_id);
+CREATE INDEX IF NOT EXISTS idx_hidden_costs_type ON hidden_cost_actuals(cost_type);
 CREATE INDEX IF NOT EXISTS idx_scope_changes_project ON scope_changes(project_id);
+CREATE INDEX IF NOT EXISTS idx_scope_changes_date ON scope_changes(change_date);
+CREATE INDEX IF NOT EXISTS idx_lessons_hash ON learning_lessons(lesson_hash);
+CREATE INDEX IF NOT EXISTS idx_lessons_type ON learning_lessons(lesson_type);
+CREATE INDEX IF NOT EXISTS idx_lessons_project ON learning_lessons(first_seen_project_id);
+CREATE INDEX IF NOT EXISTS idx_checkpoint_states_session ON checkpoint_states(session_id);
+CREATE INDEX IF NOT EXISTS idx_checkpoint_states_checkpoint ON checkpoint_states(checkpoint_id);
+CREATE INDEX IF NOT EXISTS idx_checkpoint_states_project ON checkpoint_states(project_id);
+CREATE INDEX IF NOT EXISTS idx_checkpoint_decisions_session ON checkpoint_decisions(session_id);
+CREATE INDEX IF NOT EXISTS idx_checkpoint_decisions_checkpoint ON checkpoint_decisions(checkpoint_id);
+CREATE INDEX IF NOT EXISTS idx_execution_sessions_project ON execution_sessions(project_id);
+CREATE INDEX IF NOT EXISTS idx_execution_sessions_status ON execution_sessions(status);
+
+-- 12. Conversations table (for conversation mode)
+CREATE TABLE IF NOT EXISTS conversations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT UNIQUE NOT NULL,
+    state TEXT NOT NULL, -- JSON: conversation state
+    completeness INTEGER DEFAULT 0,
+    requirements TEXT, -- JSON: extracted requirements
+    status TEXT DEFAULT 'active', -- active, saved, completed, abandoned
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    last_activity_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 13. Conversation turns table (for conversation history)
+CREATE TABLE IF NOT EXISTS conversation_turns (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    conversation_id INTEGER NOT NULL,
+    turn_number INTEGER NOT NULL,
+    user_input TEXT NOT NULL,
+    bot_response TEXT NOT NULL,
+    extracted_data TEXT, -- JSON: extracted requirements from this turn
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+);
+
+-- Indexes for conversation tables
+CREATE INDEX IF NOT EXISTS idx_conversations_session ON conversations(session_id);
+CREATE INDEX IF NOT EXISTS idx_conversations_status ON conversations(status);
+CREATE INDEX IF NOT EXISTS idx_conversation_turns_conversation ON conversation_turns(conversation_id);
+CREATE INDEX IF NOT EXISTS idx_conversation_turns_turn ON conversation_turns(conversation_id, turn_number);
 

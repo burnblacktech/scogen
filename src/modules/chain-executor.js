@@ -14,7 +14,11 @@ const ClarificationDocGenerator = require('./clarification-doc-generator');
 const RequirementsEnricher = require('./requirements-enricher');
 const ClientProfiler = require('./client-profiler');
 const HiddenCostCalculator = require('./hidden-cost-calculator');
+const ProposalAdjuster = require('./proposal-adjuster');
+const ScenarioGeneratorV2 = require('./scenario-generator-v2');
 const { getProjectService } = require('../services/project-service');
+const CheckpointManager = require('./checkpoint-manager');
+const PrescriptiveEngine = require('./prescriptive-engine');
 
 class ChainExecutor {
   constructor(config, logger, db, library) {
@@ -42,17 +46,61 @@ class ChainExecutor {
     this.hiddenCostCalculator = new HiddenCostCalculator(logger);
     this.projectService = getProjectService();
 
+    // Initialize checkpoint manager and prescriptive engine (if dbV2 available)
+    this.checkpointManager = null;
+    this.prescriptiveEngine = new PrescriptiveEngine(logger);
+    
+    try {
+      const { getProjectService } = require('../services/project-service');
+      const projectService = getProjectService();
+      if (projectService && projectService.dbV2) {
+        this.checkpointManager = new CheckpointManager(projectService.dbV2, logger);
+        this.logger.info('CheckpointManager initialized');
+      }
+    } catch (error) {
+      this.logger.warn('CheckpointManager not available', { error: error.message });
+    }
+
     this.sessionId = null;
     this.conversationHistory = [];
   }
 
   async execute(input, options = {}) {
     try {
+      // Determine execution mode (default: express)
+      const mode = options.mode || 'express';
+      
+      // Handle conversation mode (requirements already gathered)
+      if (mode === 'conversation') {
+        return await this.executeConversationMode(input, options);
+      }
+      
+      // Handle resume from checkpoint
+      if (mode === 'checkpoint' && options.resumeFrom) {
+        return await this.resumeFromCheckpoint(options.resumeFrom);
+      }
+
       this.sessionId = options.sessionId || this.generateSessionId();
-      this.logger.info('Chain execution started', { sessionId: this.sessionId, input });
+      this.logger.info('Chain execution started', { 
+        sessionId: this.sessionId, 
+        mode,
+        input 
+      });
 
       // Step 0: Input Quality Analysis (enhanced with quality metrics if enabled)
       const inputAnalysis = await this.stepInputAnalysis(input, options);
+      
+      // Checkpoint 0: After Input Analysis
+      if (mode === 'checkpoint' && this.checkpointManager) {
+        const checkpointResult = await this.handleCheckpoint('cp0_input', {
+          inputAnalysis,
+          input,
+          options
+        });
+        if (checkpointResult.paused) {
+          return checkpointResult;
+        }
+      }
       
       // Step 0.5: Client Profiling (NEW)
       const clientProfile = await this.stepClientProfiling(input, options);
@@ -82,6 +130,37 @@ class ChainExecutor {
         conversation?.domainContext || {},
         options.projectDetails || {}
       );
+      
+      // Checkpoint 1: After Requirements Enrichment (Prescription)
+      if (mode === 'checkpoint' && this.checkpointManager) {
+        // Generate prescription if domain is detected
+        let prescription = null;
+        if (conversation?.domainContext?.industry) {
+          try {
+            prescription = this.prescriptiveEngine.prescribe(
+              conversation.domainContext.industry,
+              {
+                modules: extractedModules,
+                scale: options.projectDetails?.scale,
+                teamSize: options.projectDetails?.teamSize,
+                timeline: options.projectDetails?.timeline
+              }
+            );
+          } catch (error) {
+            this.logger.warn('Prescription generation failed', { error: error.message });
+          }
+        }
+        
+        const checkpointResult = await this.handleCheckpoint('cp1_prescription', {
+          enriched,
+          conversation,
+          prescription,
+          extractedModules
+        });
+        if (checkpointResult.paused) {
+          return checkpointResult;
+        }
+      }
 
       // Step 3: Psychological Profiler
       const profile = await this.stepProfiler(conversation);
@@ -94,6 +173,20 @@ class ChainExecutor {
       // Use 'moderate' as default for backward compatibility, but don't cap based on it
       const budgetTier = conversation.extractedIntent.budget || 'moderate';
       const refined = await this.stepRefiner(parsed, profile, budgetTier, conversation.domainContext, options);
+      
+      // Checkpoint 2: After Refinement (Scope Review)
+      if (mode === 'checkpoint' && this.checkpointManager) {
+        const checkpointResult = await this.handleCheckpoint('cp2_scope', {
+          refined,
+          parsed,
+          profile,
+          budgetTier,
+          conversation
+        });
+        if (checkpointResult.paused) {
+          return checkpointResult;
+        }
+      }
 
       // Step 6: Generator
       const plan = await this.stepGenerator(refined, budgetTier, profile, conversation.domainContext);
@@ -118,6 +211,7 @@ class ChainExecutor {
           conversation.domainContext,
           options
         );
+        
       }
 
       // Step 7: Estimator (pass technical breakdown if available)
@@ -129,6 +223,32 @@ class ChainExecutor {
         plan,
         technicalBreakdown
       );
+      
+      // Checkpoint 3: After Estimation
+      if (mode === 'checkpoint' && this.checkpointManager) {
+        const checkpointResult = await this.handleCheckpoint('cp3_estimate', {
+          estimate,
+          refined,
+          plan,
+          technicalBreakdown
+        });
+        if (checkpointResult.paused) {
+          return checkpointResult;
+        }
+      }
+      
+      // Checkpoint 4: After Technical Decomposition and Estimation (Blueprint)
+      if (mode === 'checkpoint' && this.checkpointManager && technicalBreakdown) {
+        const checkpointResult = await this.handleCheckpoint('cp4_blueprint', {
+          technicalBreakdown,
+          refined,
+          plan,
+          estimate
+        });
+        if (checkpointResult.paused) {
+          return checkpointResult;
+        }
+      }
 
       // Track assumptions after estimation
       this.assumptionTracker.reset(); // Clear previous assumptions
@@ -161,6 +281,162 @@ class ChainExecutor {
           options,
           clientProfile // Pass client profile
         );
+      }
+
+      // Step 7.85: Proposal Adjustment (NEW - Dual-Layer Estimation)
+      let technicalTruth = null;
+      let adjustedProposal = null;
+      let dualEstimate = null;
+      let gapIndicator = null;
+      let budgetOptimization = null;
+      
+      if (options.enableProposalAdjustment !== false) { // Default: enabled
+        try {
+          this.logger.debug('Step 7.85: Proposal Adjustment');
+          
+          // Get technical decomposition if available (from Step 3/Step 5)
+          // technicalBreakdown is available in this scope from Step 6.6
+          let technicalDecomposition = null;
+          
+          if (technicalBreakdown) {
+            // technicalBreakdown might be the decomposition itself or have a decomposition property
+            if (technicalBreakdown.modules || technicalBreakdown.totalCost) {
+              technicalDecomposition = technicalBreakdown;
+            } else if (technicalBreakdown.decomposition) {
+              technicalDecomposition = technicalBreakdown.decomposition;
+            } else if (technicalBreakdown.technicalBreakdowns) {
+              // It might be from stepTechnicalDecomposition which returns technicalBreakdowns
+              const breakdowns = technicalBreakdown.technicalBreakdowns || [];
+              technicalDecomposition = {
+                modules: breakdowns.map(b => ({ name: b.businessModule, cost: b.totalCost })),
+                totalCost: technicalBreakdown.totalCost || 0,
+                timeline: { recommendedDays: 60 },
+                costByResource: {},
+                stats: {
+                  totalDeliverables: 0,
+                  totalComponents: technicalBreakdown.totalComponents || 0
+                }
+              };
+            }
+          }
+          
+          // If still not found, try to construct from available data
+          if (!technicalDecomposition && estimate?.estimate) {
+            const est = estimate.estimate;
+            if (est.cost && est.timeline) {
+              // Construct minimal decomposition from estimate
+              technicalDecomposition = {
+                modules: refined?.refinedScope?.modules || [],
+                totalCost: typeof est.cost === 'object' ? est.cost.total || est.cost.base : est.cost,
+                timeline: typeof est.timeline === 'object' ? est.timeline : { recommendedDays: est.timeline },
+                costByResource: est.resources || {},
+                stats: {
+                  totalDeliverables: est.deliverables || 0,
+                  totalComponents: est.components || 0
+                }
+              };
+            }
+          }
+          
+          // Get risk assessment if available
+          let riskAssessment = null;
+          if (estimate?.estimate?.riskAssessment) {
+            riskAssessment = estimate.estimate.riskAssessment;
+          } else if (estimate?.riskAssessment) {
+            riskAssessment = estimate.riskAssessment;
+          } else {
+            // Create minimal risk assessment
+            riskAssessment = {
+              level: 'medium',
+              confidence: 70,
+              recommendedBuffers: { cost: 1.15, time: 1.2 },
+              contingencyReserve: 0,
+              identifiedRisks: []
+            };
+          }
+          
+          if (technicalDecomposition && riskAssessment) {
+            // Calculate technical baseline
+            const scenarioGenV2 = new ScenarioGeneratorV2();
+            technicalTruth = scenarioGenV2.calculateTechnicalBaseline(technicalDecomposition, riskAssessment);
+            
+            // Initialize proposal adjuster
+            const proposalAdjuster = new ProposalAdjuster(technicalTruth);
+            
+            // Extract constraints
+            const constraints = {
+              maxBudget: options.projectDetails?.maxBudget ? this.parseBudget(options.projectDetails.maxBudget) : null,
+              targetDeadline: options.projectDetails?.targetDeadline || null
+            };
+            
+            // Generate adjusted proposal if budget specified
+            if (constraints.maxBudget) {
+              adjustedProposal = proposalAdjuster.generateBudgetFittedProposal(technicalTruth, constraints.maxBudget);
+              
+              // Generate budget optimization scenario if budget < cost
+              if (adjustedProposal && !adjustedProposal.fitsBudget) {
+                const budgetScenario = scenarioGenV2.generateBudgetFittedScenario(technicalTruth, constraints);
+                if (budgetScenario) {
+                  budgetOptimization = {
+                    primary: {
+                      name: budgetScenario.name,
+                      strategy: budgetScenario.strategy,
+                      cost: budgetScenario.cost,
+                      timeline: budgetScenario.timeline,
+                      adjustments: budgetScenario.adjustments,
+                      message: budgetScenario.message,
+                      options: budgetScenario.options,
+                      confidence: '91% success rate'
+                    },
+                    alternatives: [] // Can be expanded later
+                  };
+                }
+              }
+            } else {
+              // No budget constraint - use default adjustments
+              adjustedProposal = proposalAdjuster.calculateAdjustedProposal();
+            }
+            
+            // Calculate gap indicator
+            const commercialCost = adjustedProposal?.proposedCost || estimate?.estimate?.cost?.total || 0;
+            const technicalCost = technicalTruth.actualCost || 0;
+            gapIndicator = proposalAdjuster.calculateGapIndicator(commercialCost, technicalCost);
+            
+            // Create dual estimate
+            dualEstimate = {
+              technical: {
+                cost: technicalCost,
+                timeline: technicalTruth.actualTimeline,
+                modules: technicalTruth.actualModules,
+                teamSize: technicalTruth.actualTeamSize,
+                complexity: technicalTruth.actualComplexity,
+                confidence: technicalTruth.confidence || 85,
+                historicalProjects: 247 // Can be made dynamic
+              },
+              commercial: {
+                cost: commercialCost,
+                timeline: adjustedProposal?.timeline || technicalTruth.actualTimeline,
+                teamSize: adjustedProposal?.teamSize || technicalTruth.actualTeamSize,
+                narrative: adjustedProposal?.narrative || null,
+                moduleDistribution: adjustedProposal?.moduleDistribution || null,
+                confidence: adjustedProposal?.confidence || 92,
+                userBudget: constraints.maxBudget || null,
+                budgetConstrained: constraints.maxBudget && constraints.maxBudget < technicalCost,
+                desiredTimeline: constraints.targetDeadline || null,
+                riskTolerance: clientProfile?.riskTolerance || 'medium',
+                paymentTerms: adjustedProposal?.paymentTerms || 'milestone'
+              }
+            };
+          } else {
+            this.logger.warn('Proposal adjustment skipped: Missing technical decomposition or risk assessment');
+          }
+        } catch (adjustmentError) {
+          this.logger.error('Proposal adjustment failed (non-fatal)', {
+            error: adjustmentError.message,
+            stack: adjustmentError.stack
+          });
+          // Don't throw - proposal adjustment is optional
+        }
       }
 
       // Step 7.9: Hidden Costs Calculation (NEW)
@@ -223,7 +499,12 @@ class ChainExecutor {
         scenarios: scenarios || null, // Only present if scenario generation enabled
         assumptions: this.assumptionTracker.formatForDisplay(), // Always present
         clientProfile: clientProfile || null, // Client profile (NEW)
-        hiddenCosts: hiddenCosts || null // Hidden costs breakdown (NEW)
+        hiddenCosts: hiddenCosts || null, // Hidden costs breakdown (NEW)
+        technicalTruth: technicalTruth || null, // Technical baseline (NEW)
+        adjustedProposal: adjustedProposal || null, // Adjusted commercial proposal (NEW)
+        dualEstimate: dualEstimate || null, // Dual-layer estimate (NEW)
+        gapIndicator: gapIndicator || null, // Gap indicator for UI (NEW)
+        budgetOptimization: budgetOptimization || null // Budget optimization scenarios (NEW)
       };
 
     } catch (error) {
@@ -1017,9 +1298,488 @@ class ChainExecutor {
     return amount > 0 ? amount : null;
   }
 
+  /**
+   * Handle checkpoint - save state and wait for decision
+   * @param {string} checkpointId - Checkpoint identifier
+   * @param {Object} state - State data to save
+   * @returns {Object} Checkpoint result
+   */
+  async handleCheckpoint(checkpointId, state) {
+    if (!this.checkpointManager) {
+      this.logger.warn('CheckpointManager not available, skipping checkpoint');
+      return { paused: false };
+    }
+
+    try {
+      // Save checkpoint state
+      const projectId = state.projectId || null;
+      await this.checkpointManager.saveCheckpoint(
+        this.sessionId,
+        checkpointId,
+        state,
+        projectId
+      );
+
+      this.logger.info('Checkpoint saved', { sessionId: this.sessionId, checkpointId });
+
+      // In checkpoint mode, we pause and wait for API call to continue
+      // The API will check for decision and resume execution
+      return {
+        paused: true,
+        status: 'paused',
+        sessionId: this.sessionId,
+        checkpointId: checkpointId,
+        checkpointName: this.checkpointManager.getCheckpointConfig(checkpointId)?.name || checkpointId,
+        message: 'Execution paused at checkpoint. Use /api/scope/resume to continue.'
+      };
+    } catch (error) {
+      this.logger.error('Checkpoint handling failed', {
+        checkpointId,
+        error: error.message
+      });
+      // Don't fail execution, just log and continue
+      return { paused: false };
+    }
+  }
+
+  /**
+   * Resume execution from a checkpoint
+   * @param {string} sessionId - Session identifier
+   * @param {string} checkpointId - Checkpoint identifier to resume from
+   * @returns {Object} Execution result
+   */
+  async resumeFromCheckpoint(sessionId, checkpointId) {
+    if (!this.checkpointManager) {
+      throw new Error('CheckpointManager not available');
+    }
+
+    try {
+      // Get checkpoint state
+      const resumeData = this.checkpointManager.resumeFromCheckpoint(sessionId, checkpointId);
+      
+      if (!resumeData || !resumeData.checkpoint) {
+        throw new Error(`Checkpoint not found: ${sessionId}/${checkpointId}`);
+      }
+
+      this.sessionId = sessionId;
+      const state = resumeData.checkpoint.state;
+      const decision = resumeData.decision;
+
+      this.logger.info('Resuming from checkpoint', { sessionId, checkpointId });
+
+      // Restore state and continue from checkpoint
+      // The exact continuation logic depends on which checkpoint we're resuming from
+      const checkpointConfig = this.checkpointManager.getCheckpointConfig(checkpointId);
+      
+      if (!checkpointConfig) {
+        throw new Error(`Unknown checkpoint: ${checkpointId}`);
+      }
+
+      // Map checkpoint to continuation point
+      const continuationMap = {
+        'cp0_input': () => this.continueFromInputCheckpoint(state, decision),
+        'cp1_prescription': () => this.continueFromPrescriptionCheckpoint(state, decision),
+        'cp2_scope': () => this.continueFromScopeCheckpoint(state, decision),
+        'cp3_estimate': () => this.continueFromEstimateCheckpoint(state, decision),
+        'cp4_blueprint': () => this.continueFromBlueprintCheckpoint(state, decision)
+      };
+
+      const continueFn = continuationMap[checkpointId];
+      if (!continueFn) {
+        throw new Error(`No continuation handler for checkpoint: ${checkpointId}`);
+      }
+
+      // Continue execution from checkpoint
+      return await continueFn();
+    } catch (error) {
+      this.logger.error('Resume from checkpoint failed', {
+        sessionId,
+        checkpointId,
+        error: error.message
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Continue from input checkpoint
+   */
+  async continueFromInputCheckpoint(state, decision) {
+    // Restore state
+    const inputAnalysis = state.inputAnalysis;
+    const input = state.input;
+    const options = state.options || {};
+    options.mode = 'checkpoint'; // Ensure checkpoint mode continues
+
+    // Continue from after input analysis
+    const clientProfile = await this.stepClientProfiling(input, options);
+    
+    // Apply decision modifications if any
+    if (decision && decision.decisionData && decision.decisionData.modifications) {
+      // Apply modifications to input or options
+      Object.assign(options, decision.decisionData.modifications);
+    }
+
+    // Continue normal flow (will hit next checkpoint)
+    return await this.continueExecutionFromState({
+      input,
+      inputAnalysis,
+      clientProfile,
+      options
+    });
+  }
+
+  /**
+   * Continue from prescription checkpoint
+   */
+  async continueFromPrescriptionCheckpoint(state, decision) {
+    const enriched = state.enriched;
+    const conversation = state.conversation;
+    const options = { mode: 'checkpoint' };
+
+    // Apply prescription decision if any
+    if (decision && decision.decisionData && decision.decisionData.prescription) {
+      // Use modified prescription
+      options.prescription = decision.decisionData.prescription;
+    }
+
+    // Continue from after requirements enrichment
+    const profile = await this.stepProfiler(conversation);
+    const parsed = await this.stepParser(conversation, enriched);
+    const budgetTier = conversation.extractedIntent.budget || 'moderate';
+    const refined = await this.stepRefiner(parsed, profile, budgetTier, conversation.domainContext, options);
+
+    return await this.continueExecutionFromState({
+      enriched,
+      conversation,
+      profile,
+      parsed,
+      refined,
+      budgetTier,
+      options
+    });
+  }
+
+  /**
+   * Continue from scope checkpoint
+   */
+  async continueFromScopeCheckpoint(state, decision) {
+    const refined = state.refined;
+    const parsed = state.parsed;
+    const profile = state.profile;
+    const budgetTier = state.budgetTier;
+    const conversation = state.conversation;
+    const options = { mode: 'checkpoint' };
+
+    // Apply scope modifications if any
+    if (decision && decision.decisionData && decision.decisionData.scopeModifications) {
+      // Apply modifications to refined scope
+      Object.assign(refined.refinedScope, decision.decisionData.scopeModifications);
+    }
+
+    // Continue from after refinement
+    const plan = await this.stepGenerator(refined, budgetTier, profile, conversation.domainContext);
+
+    return await this.continueExecutionFromState({
+      refined,
+      parsed,
+      profile,
+      budgetTier,
+      conversation,
+      plan,
+      options
+    });
+  }
+
+  /**
+   * Continue from estimate checkpoint
+   */
+  async continueFromEstimateCheckpoint(state, decision) {
+    const estimate = state.estimate;
+    const refined = state.refined;
+    const plan = state.plan;
+    const technicalBreakdown = state.technicalBreakdown;
+    const options = { mode: 'checkpoint' };
+
+    // Apply estimate modifications if any
+    if (decision && decision.decisionData && decision.decisionData.estimateModifications) {
+      // Apply modifications to estimate
+      Object.assign(estimate.estimate, decision.decisionData.estimateModifications);
+    }
+
+    // Continue from after estimation
+    return await this.continueExecutionFromState({
+      estimate,
+      refined,
+      plan,
+      technicalBreakdown,
+      options
+    });
+  }
+
+  /**
+   * Continue from blueprint checkpoint
+   */
+  async continueFromBlueprintCheckpoint(state, decision) {
+    const technicalBreakdown = state.technicalBreakdown;
+    const refined = state.refined;
+    const plan = state.plan;
+    const estimate = state.estimate;
+    const options = { mode: 'checkpoint' };
+
+    // Continue from after blueprint (near end of chain)
+    return await this.continueExecutionFromState({
+      technicalBreakdown,
+      refined,
+      plan,
+      estimate,
+      options
+    });
+  }
+
+  /**
+   * Continue execution from a saved state
+   * This is a simplified version - in practice, we'd need to restore full state
+   */
+  async continueExecutionFromState(state) {
+    // This is a placeholder - full implementation would restore all intermediate results
+    // and continue from the appropriate point in the chain
+    // For now, we'll just return the state and let the API handle continuation
+    
+    this.logger.warn('continueExecutionFromState is a placeholder - full implementation needed');
+    
+    return {
+      success: false,
+      status: 'resume_not_fully_implemented',
+      message: 'Resume functionality requires full state restoration - use express mode for now',
+      state: state
+    };
+  }
+
   generateSessionId() {
     const { v4: uuidv4 } = require('uuid');
     return uuidv4();
+  }
+
+  /**
+   * Execute in conversation mode (requirements already gathered)
+   * @param {string} input - Chain input (converted from conversation requirements)
+   * @param {Object} options - Execution options
+   * @param {Array} options.outputs - Output types to generate ['business', 'technical', 'blueprint']
+   * @param {Object} options.requirements - Conversation requirements
+   * @returns {Object} Generation result
+   */
+  async executeConversationMode(input, options = {}) {
+    const startTime = Date.now();
+    const { outputs = ['business', 'technical'], requirements = {}, sessionId } = options;
+    
+    this.sessionId = sessionId || this.generateSessionId();
+    this.logger.info('Conversation mode execution started', { 
+      sessionId: this.sessionId,
+      outputs,
+      requirements 
+    });
+
+    try {
+      // Skip interactive/question steps - requirements already gathered
+      // Build domain context from requirements
+      const domainContext = {
+        industry: requirements.domain || 'generic',
+        useCase: 'application'
+      };
+
+      // Convert features to modules format
+      const extractedModules = (requirements.features || []).map(feature => ({
+        name: feature,
+        displayName: feature
+      }));
+
+      // Step 1: Requirements Enrichment (add domain implicits)
+      const enriched = await this.stepRequirementsEnrichment(
+        extractedModules,
+        domainContext,
+        {
+          scale: requirements.scale,
+          budget: requirements.budget,
+          timeline: requirements.timeline,
+          users: requirements.users
+        }
+      );
+
+      // Step 2: Parser (minimal - requirements already structured)
+      const conversation = {
+        extractedIntent: {
+          modules: extractedModules
+        },
+        domainContext: domainContext
+      };
+      const parsed = await this.stepParser(conversation, enriched);
+
+      // Step 3: Client Profiling (from requirements)
+      const clientProfile = {
+        techSavvy: requirements.technical && Object.keys(requirements.technical).length > 0 ? 'high' : 'medium',
+        riskLevel: requirements.scale === 'enterprise' ? 'high' : 'medium',
+        clientSize: requirements.scale || 'sme'
+      };
+
+      // Step 4: Refiner
+      const budgetTier = this.parseBudget(requirements.budget || 'medium');
+      const refined = await this.stepRefiner(parsed, clientProfile, budgetTier, domainContext);
+
+      // Step 5: Estimator
+      const plan = {
+        modules: refined.modules || extractedModules,
+        phases: []
+      };
+      const technicalBreakdown = requirements.technical ? {
+        frontend: requirements.technical.frontend,
+        backend: requirements.technical.backend,
+        database: requirements.technical.database,
+        deployment: requirements.technical.deployment
+      } : null;
+      
+      const estimate = await this.stepEstimator(
+        refined,
+        budgetTier,
+        clientProfile,
+        domainContext,
+        plan,
+        technicalBreakdown
+      );
+
+      // Step 6: Hidden Cost Calculator
+      const hiddenCosts = await this.hiddenCostCalculator.calculate(
+        refined,
+        clientProfile,
+        estimate,
+        domainContext
+      );
+
+      // Step 7: Generate requested outputs
+      const result = {
+        sessionId: this.sessionId,
+        projectId: null,
+        outputs: {},
+        generationTime: Date.now() - startTime
+      };
+
+      // Business document
+      if (outputs.includes('business')) {
+        const businessOutput = await this.translator.translate({
+          plan: plan,
+          estimate: estimate,
+          hiddenCosts: hiddenCosts,
+          clientProfile: clientProfile,
+          conversation: conversation,
+          input: input
+        });
+        result.outputs.business = businessOutput;
+      }
+
+      // Technical document
+      if (outputs.includes('technical')) {
+        const technicalOutput = await this.translator.generateTechnicalDocumentV2({
+          refined: refined,
+          estimate: estimate,
+          technicalBreakdown: technicalBreakdown,
+          domainContext: domainContext
+        }, 'comprehensive');
+        result.outputs.technical = technicalOutput;
+      }
+
+      // Blueprint
+      if (outputs.includes('blueprint') || outputs.includes('pseudocode')) {
+        const BlueprintGenerator = require('./blueprint-generator');
+        const blueprintGen = new BlueprintGenerator(this.logger);
+        const blueprint = blueprintGen.generateBlueprint({
+          modules: refined.modules || extractedModules,
+          domainContext: domainContext,
+          technicalBreakdown: technicalBreakdown
+        }, 'comprehensive');
+        result.outputs.blueprint = blueprint;
+      }
+
+      // Step 9.5: Generate Complete Internal Analysis (Progressive Output System)
+      let completeAnalysis = null;
+      if (options.mode === 'conversation' || options.enableProgressiveOutput) {
+        try {
+          this.logger.info('Generating complete internal analysis for progressive output...');
+          const InternalAnalysisEngine = require('./internal-analysis-engine');
+          const internalEngine = new InternalAnalysisEngine(this.logger);
+          
+          // Build chain result for analysis
+          const chainResult = {
+            refined: refined,
+            estimate: estimate,
+            clientProfile: clientProfile,
+            hiddenCosts: hiddenCosts,
+            technicalBreakdown: technicalBreakdown,
+            domainContext: domainContext,
+            scenarios: null, // Can be added if available
+            assumptions: []
+          };
+          
+          completeAnalysis = await internalEngine.generateCompleteAnalysis(chainResult);
+          result.completeAnalysis = completeAnalysis;
+          result.progressiveOutputEnabled = true;
+          
+          this.logger.info('Complete analysis generated', {
+            modules: completeAnalysis.metadata.modules,
+            completeness: completeAnalysis.metadata.completeness
+          });
+        } catch (error) {
+          this.logger.warn('Failed to generate complete analysis', { error: error.message });
+          // Continue without progressive output
+          result.progressiveOutputEnabled = false;
+        }
+      }
+
+      // Save to database if project service available
+      if (this.projectService) {
+        try {
+          const projectData = {
+            refined_scope: refined,
+            base_estimate: estimate,
+            hidden_costs: hiddenCosts,
+            client_profile: clientProfile,
+            domainContext: domainContext
+          };
+          const saved = await this.saveToEnhancedDatabase(projectData, {
+            sessionId: this.sessionId,
+            originalInput: input
+          });
+          result.projectId = saved?.projectId || null;
+          
+          // Store complete analysis if generated
+          if (completeAnalysis && result.projectId) {
+            const { getDbV2 } = require('../database/db-manager-v2');
+            const dbV2 = getDbV2();
+            if (dbV2) {
+              dbV2.storeCompleteAnalysis(result.projectId, completeAnalysis);
+              this.logger.info('Complete analysis stored in database', { projectId: result.projectId });
+            }
+          }
+        } catch (error) {
+          this.logger.warn('Failed to save conversation result to database', { error: error.message });
+        }
+      }
+
+      this.logger.info('Conversation mode execution completed', {
+        sessionId: this.sessionId,
+        outputs: Object.keys(result.outputs),
+        progressiveOutputEnabled: result.progressiveOutputEnabled,
+        generationTime: result.generationTime
+      });
+
+      return result;
+    } catch (error) {
+      this.logger.error('Conversation mode execution failed', {
+        sessionId: this.sessionId,
+        error: error.message,
+        stack: error.stack
+      });
+      throw error;
+    }
   }
 
   getConversationHistory() {

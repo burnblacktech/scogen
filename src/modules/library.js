@@ -139,28 +139,56 @@ class ProprietaryLibrary {
   }
 
   normalizeModuleName(userInput) {
+    const { moduleCache } = require('../utils/cache');
+    
+    // Check cache first
+    const cacheKey = `module:${userInput.toLowerCase().trim()}`;
+    const cached = moduleCache.get(cacheKey);
+    if (cached !== null) {
+      return cached;
+    }
+    
     const normalized = userInput.toLowerCase().trim();
+    let result;
     
     // Direct match
     if (this.moduleAliases[normalized]) {
-      return this.moduleAliases[normalized];
-    }
-
-    // Fuzzy match (contains)
-    for (const [alias, canonical] of Object.entries(this.moduleAliases)) {
-      if (normalized.includes(alias) || alias.includes(normalized)) {
-        return canonical;
+      result = this.moduleAliases[normalized];
+    } else {
+      // Fuzzy match (contains)
+      let found = false;
+      for (const [alias, canonical] of Object.entries(this.moduleAliases)) {
+        if (normalized.includes(alias) || alias.includes(normalized)) {
+          result = canonical;
+          found = true;
+          break;
+        }
+      }
+      
+      // No match: return original (title case)
+      if (!found) {
+        result = userInput
+          .split(' ')
+          .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+          .join('');
       }
     }
-
-    // No match: return original (title case)
-    return userInput
-      .split(' ')
-      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-      .join('');
+    
+    // Cache result
+    moduleCache.set(cacheKey, result);
+    return result;
   }
 
   getReusableModule(moduleName, industry) {
+    const { moduleCache } = require('../utils/cache');
+    
+    // Check cache first
+    const cacheKey = `reuse:${moduleName}:${industry || 'generic'}`;
+    const cached = moduleCache.get(cacheKey);
+    if (cached !== null) {
+      return cached;
+    }
+    
     // For MVP: Simplified reuse logic
     // In future: Load from separate reuse.json
     
@@ -171,21 +199,26 @@ class ProprietaryLibrary {
       'Notifications': { effort: 1.0, confidence: 0.95, savings: 0.5 }
     };
 
+    let result;
     if (reusableModules[moduleName]) {
-      return {
+      result = {
         ...reusableModules[moduleName],
         available: true,
         module: moduleName
       };
+    } else {
+      result = {
+        module: moduleName,
+        available: false,
+        effort: this.getModuleEffort(moduleName, industry),
+        confidence: 0.7,
+        savings: 0
+      };
     }
-
-    return {
-      module: moduleName,
-      available: false,
-      effort: this.getModuleEffort(moduleName, industry),
-      confidence: 0.7,
-      savings: 0
-    };
+    
+    // Cache result
+    moduleCache.set(cacheKey, result);
+    return result;
   }
 }
 

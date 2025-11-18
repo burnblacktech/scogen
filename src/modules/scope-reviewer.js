@@ -294,7 +294,8 @@ class ScopeReviewer {
     }
 
     // 3. Budget risks
-    if (totalCost < 50000) {
+    const budgetRiskThreshold = this.library?.config?.get?.('scopeReview.budgetRiskThreshold') || 50000;
+    if (totalCost < budgetRiskThreshold) {
       risks.push({
         category: 'budget',
         severity: 'low',
@@ -450,16 +451,28 @@ class ScopeReviewer {
       
       const historical = this.db.getAllProjects ? this.db.getAllProjects() : [];
       
-      // Filter by industry and similar module count
-      const filtered = historical.filter(p => {
+      // Optimize: Single pass to filter, parse, and calculate sums
+      let filteredCount = 0;
+      let costSum = 0;
+      let daysSum = 0;
+      const filtered = [];
+      
+      for (const p of historical) {
+        // Early exit if industry doesn't match
+        if (p.industry !== domainContext.industry) continue;
+        
         const pModules = p.modules ? (Array.isArray(p.modules) ? p.modules : JSON.parse(p.modules || '[]')) : [];
-        return (
-          p.industry === domainContext.industry &&
-          Math.abs(pModules.length - modulesList.length) <= 2
-        );
-      });
+        
+        // Check module count similarity
+        if (Math.abs(pModules.length - modulesList.length) <= 2) {
+          filtered.push(p);
+          filteredCount++;
+          costSum += (p.actual_cost || 0);
+          daysSum += (p.actual_days || 0);
+        }
+      }
 
-      if (filtered.length === 0) {
+      if (filteredCount === 0) {
         return { 
           variance: 0, 
           adjustedCost: totalCost, 
@@ -468,8 +481,8 @@ class ScopeReviewer {
         };
       }
 
-      const avgCost = filtered.reduce((sum, p) => sum + (p.actual_cost || 0), 0) / filtered.length;
-      const avgDays = filtered.reduce((sum, p) => sum + (p.actual_days || 0), 0) / filtered.length;
+      const avgCost = costSum / filteredCount;
+      const avgDays = daysSum / filteredCount;
 
       const estimatedCost = totalCost;
       const estimatedDays = totalDays;
@@ -477,12 +490,15 @@ class ScopeReviewer {
       const costVariance = estimatedCost > 0 ? Math.abs(estimatedCost - avgCost) / estimatedCost : 0;
       const daysVariance = estimatedDays > 0 ? Math.abs(estimatedDays - avgDays) / estimatedDays : 0;
 
+      // Identify outlier modules by comparing individual module estimates with historical patterns
+      const outlierModules = this.identifyOutlierModules(modulesList, filtered, domainContext);
+
       return {
         variance: Math.max(costVariance, daysVariance),
         adjustedCost: avgCost,
         adjustedDays: avgDays,
         historicalAvg: { cost: avgCost, days: avgDays },
-        outlierModules: [] // TODO: identify which modules are off
+        outlierModules: outlierModules
       };
     } catch (error) {
       this.logger.warn('Historical comparison failed', { error: error.message });
@@ -510,12 +526,13 @@ class ScopeReviewer {
 
     if (criticalModules.length > 0 && totalDays > 0) {
       const dailyRate = totalCost / totalDays;
-      if (dailyRate < 5000) {
+      const seniorResourceRate = this.library?.config?.get?.('scopeReview.seniorResourceDailyRate') || 5000;
+      if (dailyRate < seniorResourceRate) {
         return {
           valid: false,
-          message: 'Critical modules require senior resources (avg ₹5000+/day)',
+          message: `Critical modules require senior resources (avg ₹${seniorResourceRate.toLocaleString('en-IN')}+/day)`,
           recommendation: 'Allocate senior developers for critical modules',
-          impact: { cost: criticalModules.length * 3 * 5000 }
+          impact: { cost: criticalModules.length * 3 * seniorResourceRate }
         };
       }
     }
@@ -557,16 +574,190 @@ class ScopeReviewer {
   }
 
   loadCompletenessRules() {
-    // TODO: Load from configuration or database
-    return {};
+    // Load completeness rules from configuration or database
+    // Currently using hardcoded rules; can be extended to load from config/db
+    // Future enhancement: Store rules in database for dynamic updates
+    try {
+      // Try to load from database if available
+      if (this.db && this.db.getCompletenessRules) {
+        const rules = this.db.getCompletenessRules();
+        if (rules && Object.keys(rules).length > 0) {
+          return rules;
+        }
+      }
+      
+      // Try to load from config if available
+      if (this.library?.config) {
+        const configMinModules = this.library.config.get('scopeReview.minModules');
+        const configRequiredCategories = this.library.config.get('scopeReview.requiredCategories');
+        
+        if (configMinModules !== undefined || configRequiredCategories !== undefined) {
+          return {
+            minModules: configMinModules ?? 3,
+            requiredCategories: configRequiredCategories ?? ['authentication', 'data-storage'],
+            domainSpecific: {
+              'ecommerce': ['payment', 'cart', 'catalog'],
+              'fintech': ['security', 'compliance', 'audit'],
+              'healthcare': ['privacy', 'compliance', 'data-encryption']
+            }
+          };
+        }
+      }
+    } catch (error) {
+      this.logger.warn('Failed to load completeness rules from database/config, using defaults', {
+        error: error.message
+      });
+    }
+    
+    // Default rules (can be moved to config file)
+    return {
+      minModules: 3,
+      requiredCategories: ['authentication', 'data-storage'],
+      domainSpecific: {
+        'ecommerce': ['payment', 'cart', 'catalog'],
+        'fintech': ['security', 'compliance', 'audit'],
+        'healthcare': ['privacy', 'compliance', 'data-encryption']
+      }
+    };
   }
 
   loadAccuracyRules() {
-    return {};
+    // Load accuracy rules from configuration or database
+    // Currently using hardcoded rules; can be extended to load from config/db
+    try {
+      if (this.db && this.db.getAccuracyRules) {
+        const rules = this.db.getAccuracyRules();
+        if (rules && Object.keys(rules).length > 0) {
+          return rules;
+        }
+      }
+    } catch (error) {
+      this.logger.warn('Failed to load accuracy rules from database, using defaults', {
+        error: error.message
+      });
+    }
+    
+    // Default rules
+    return {
+      varianceThreshold: 0.3, // 30% variance is acceptable
+      costVarianceWeight: 0.6,
+      timelineVarianceWeight: 0.4
+    };
   }
 
   loadRiskPatterns() {
-    return {};
+    // Load risk patterns from configuration or database
+    try {
+      if (this.db && this.db.getRiskPatterns) {
+        const patterns = this.db.getRiskPatterns();
+        if (patterns && Object.keys(patterns).length > 0) {
+          return patterns;
+        }
+      }
+    } catch (error) {
+      this.logger.warn('Failed to load risk patterns from database, using defaults', {
+        error: error.message
+      });
+    }
+    
+    // Default risk patterns
+    return {
+      highRiskKeywords: ['payment', 'transaction', 'security', 'compliance'],
+      mediumRiskKeywords: ['realtime', 'websocket', 'integration', 'third-party'],
+      complexityMultipliers: {
+        'critical': 1.5,
+        'high': 1.3,
+        'medium': 1.0,
+        'low': 0.8
+      }
+    };
+  }
+
+  /**
+   * Identify modules with estimates that significantly differ from historical patterns
+   * @param {Array} modules - Current module estimates
+   * @param {Array} historicalProjects - Historical project data
+   * @param {Object} domainContext - Domain context
+   * @returns {Array} - List of outlier module names
+   */
+  identifyOutlierModules(modules, historicalProjects, domainContext) {
+    const outliers = [];
+    // Load threshold from config
+    const varianceThreshold = this.library?.config?.get?.('scopeReview.outlierVarianceThreshold') || 0.4; // 40% variance threshold for outliers
+
+    if (!modules || modules.length === 0 || !historicalProjects || historicalProjects.length === 0) {
+      return outliers;
+    }
+
+    // Extract module-level estimates from historical projects (optimized single pass)
+    const historicalModuleData = {};
+    for (const project of historicalProjects) {
+      try {
+        const projectModules = project.modules 
+          ? (Array.isArray(project.modules) ? project.modules : JSON.parse(project.modules || '[]'))
+          : [];
+        
+        for (const mod of projectModules) {
+          const modName = (mod.name || mod.displayName || '').toLowerCase();
+          if (!historicalModuleData[modName]) {
+            historicalModuleData[modName] = { costs: [], timelines: [] };
+          }
+          if (mod.estimatedCost) historicalModuleData[modName].costs.push(mod.estimatedCost);
+          if (mod.estimatedDays) historicalModuleData[modName].timelines.push(mod.estimatedDays);
+        }
+      } catch (error) {
+        this.logger.warn('Failed to parse historical module data', { error: error.message });
+      }
+    }
+
+    // Compare current modules with historical data (optimized)
+    for (const module of modules) {
+      const modName = (module.name || module.displayName || '').toLowerCase();
+      const historical = historicalModuleData[modName];
+      
+      if (!historical || historical.costs.length === 0) {
+        continue; // No historical data for this module
+      }
+
+      // Calculate averages in single pass
+      let costSum = 0;
+      let timelineSum = 0;
+      for (const cost of historical.costs) {
+        costSum += cost;
+      }
+      for (const timeline of historical.timelines) {
+        timelineSum += timeline;
+      }
+      
+      const avgHistoricalCost = costSum / historical.costs.length;
+      const avgHistoricalTimeline = historical.timelines.length > 0
+        ? timelineSum / historical.timelines.length
+        : 0;
+
+      const currentCost = module.estimatedCost || module.cost || 0;
+      const currentTimeline = module.estimatedDays || module.timeline?.days || 0;
+
+      // Calculate variance
+      const costVariance = avgHistoricalCost > 0 
+        ? Math.abs(currentCost - avgHistoricalCost) / avgHistoricalCost 
+        : 0;
+      const timelineVariance = avgHistoricalTimeline > 0
+        ? Math.abs(currentTimeline - avgHistoricalTimeline) / avgHistoricalTimeline
+        : 0;
+
+      // Flag as outlier if variance exceeds threshold
+      if (costVariance > varianceThreshold || timelineVariance > varianceThreshold) {
+        outliers.push({
+          name: module.name || module.displayName,
+          costVariance: costVariance,
+          timelineVariance: timelineVariance,
+          currentEstimate: { cost: currentCost, timeline: currentTimeline },
+          historicalAvg: { cost: avgHistoricalCost, timeline: avgHistoricalTimeline }
+        });
+      }
+    }
+
+    return outliers;
   }
 }
 

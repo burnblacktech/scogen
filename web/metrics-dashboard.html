@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SCOGEN - Documentation Metrics Dashboard</title>
+  <link rel="stylesheet" href="css/design-system.css">
+  <style>
+    .metrics-container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 2rem;
+    }
+    .metrics-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 2rem;
+    }
+    .project-selector {
+      display: flex;
+      gap: 1rem;
+      align-items: center;
+    }
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 1.5rem;
+      margin-bottom: 2rem;
+    }
+    .metric-card {
+      background: white;
+      border-radius: 8px;
+      padding: 1.5rem;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .metric-card h3 {
+      margin: 0 0 1rem 0;
+      font-size: 0.9rem;
+      color: #666;
+      text-transform: uppercase;
+    }
+    .metric-value {
+      font-size: 2rem;
+      font-weight: bold;
+      margin: 0.5rem 0;
+    }
+    .metric-status {
+      display: inline-block;
+      padding: 0.25rem 0.75rem;
+      border-radius: 4px;
+      font-size: 0.85rem;
+      font-weight: 600;
+    }
+    .status-red { background: #fee; color: #c33; }
+    .status-amber { background: #ffeaa7; color: #d63031; }
+    .status-green { background: #d5f4e6; color: #00b894; }
+    .level-metrics {
+      margin-top: 2rem;
+    }
+    .level-section {
+      margin-bottom: 2rem;
+      background: white;
+      border-radius: 8px;
+      padding: 1.5rem;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .level-section h2 {
+      margin: 0 0 1rem 0;
+      color: #2d3436;
+    }
+    .metric-row {
+      display: grid;
+      grid-template-columns: 200px 1fr 100px;
+      gap: 1rem;
+      padding: 0.75rem 0;
+      border-bottom: 1px solid #eee;
+    }
+    .metric-row:last-child {
+      border-bottom: none;
+    }
+    .metric-label {
+      font-weight: 500;
+      color: #555;
+    }
+    .metric-bar {
+      height: 24px;
+      background: #eee;
+      border-radius: 4px;
+      overflow: hidden;
+      position: relative;
+    }
+    .metric-bar-fill {
+      height: 100%;
+      transition: width 0.3s;
+    }
+    .metric-bar-value {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: #333;
+    }
+    .loading {
+      text-align: center;
+      padding: 2rem;
+      color: #666;
+    }
+    .error {
+      background: #fee;
+      color: #c33;
+      padding: 1rem;
+      border-radius: 4px;
+      margin: 1rem 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="metrics-container">
+    <div class="metrics-header">
+      <h1>Documentation Metrics Dashboard</h1>
+      <div class="project-selector">
+        <label for="project-select">Project:</label>
+        <select id="project-select" onchange="loadMetrics()">
+          <option value="">Select a project...</option>
+        </select>
+        <button class="btn-secondary" onclick="refreshMetrics()">Refresh</button>
+      </div>
+    </div>
+
+    <div id="metrics-content">
+      <div class="loading">Select a project to view metrics</div>
+    </div>
+  </div>
+
+  <script>
+    let currentProjectId = null;
+
+    async function init() {
+      // Get projectId from URL
+      const params = new URLSearchParams(window.location.search);
+      currentProjectId = params.get('projectId');
+      
+      if (currentProjectId) {
+        document.getElementById('project-select').value = currentProjectId;
+        await loadMetrics();
+      } else {
+        await loadProjectList();
+      }
+    }
+
+    async function loadProjectList() {
+      try {
+        const response = await fetch('/api/projects');
+        if (response.ok) {
+          const data = await response.json();
+          const select = document.getElementById('project-select');
+          
+          data.projects?.forEach(project => {
+            const option = document.createElement('option');
+            option.value = project.id || project.project_code;
+            option.textContent = `${project.project_code || project.id} - ${project.name || 'Unnamed'}`;
+            select.appendChild(option);
+          });
+        }
+      } catch (error) {
+        console.error('Failed to load projects:', error);
+      }
+    }
+
+    async function loadMetrics() {
+      const projectId = document.getElementById('project-select').value;
+      if (!projectId) {
+        document.getElementById('metrics-content').innerHTML = 
+          '<div class="loading">Select a project to view metrics</div>';
+        return;
+      }
+
+      currentProjectId = projectId;
+      document.getElementById('metrics-content').innerHTML = '<div class="loading">Loading metrics...</div>';
+
+      try {
+        const response = await fetch(`/api/levels/metrics/${projectId}`);
+        if (!response.ok) {
+          throw new Error('Failed to load metrics');
+        }
+
+        const data = await response.json();
+        if (!data.success || !data.metrics) {
+          throw new Error('No metrics available');
+        }
+
+        renderMetrics(data.metrics);
+      } catch (error) {
+        document.getElementById('metrics-content').innerHTML = 
+          `<div class="error">Error loading metrics: ${error.message}</div>`;
+      }
+    }
+
+    function renderMetrics(metrics) {
+      const levels = [1, 2, 3, 4, 5];
+      let html = '';
+
+      // Summary cards
+      html += '<div class="metrics-grid">';
+      
+      // Overall coverage
+      const overallCoverage = calculateOverallCoverage(metrics);
+      html += createMetricCard('Overall Module Coverage', overallCoverage.value, overallCoverage.status, '%');
+      
+      // L5 Pseudocode Coverage
+      const l5Pseudo = metrics[5]?.pseudocode_coverage?.value;
+      if (l5Pseudo !== undefined) {
+        html += createMetricCard('L5 Pseudocode Coverage', (l5Pseudo * 100).toFixed(1), getStatus(l5Pseudo, 0.95), '%');
+      }
+      
+      // Cross-ref Pass Rate
+      const avgCrossRef = calculateAverageCrossRef(metrics);
+      html += createMetricCard('Avg Cross-Ref Pass Rate', (avgCrossRef * 100).toFixed(1), getStatus(avgCrossRef, 1.0), '%');
+      
+      // Performance
+      const avgPerformance = calculateAveragePerformance(metrics);
+      html += createMetricCard('Avg Generation Time', avgPerformance.toFixed(1), 'status-green', 's');
+      
+      html += '</div>';
+
+      // Level-by-level breakdown
+      html += '<div class="level-metrics">';
+      levels.forEach(level => {
+        if (metrics[level]) {
+          html += renderLevelMetrics(level, metrics[level]);
+        }
+      });
+      html += '</div>';
+
+      document.getElementById('metrics-content').innerHTML = html;
+    }
+
+    function createMetricCard(title, value, status, unit = '') {
+      return `
+        <div class="metric-card">
+          <h3>${title}</h3>
+          <div class="metric-value">${value}${unit}</div>
+          <span class="metric-status ${status}">${getStatusLabel(status)}</span>
+        </div>
+      `;
+    }
+
+    function renderLevelMetrics(level, levelMetrics) {
+      const levelNames = {
+        1: 'Executive Summary',
+        2: 'Business Scope',
+        3: 'Detailed Planning',
+        4: 'Technical Blueprint',
+        5: 'Implementation Guide'
+      };
+
+      let html = `
+        <div class="level-section">
+          <h2>Level ${level}: ${levelNames[level]}</h2>
+      `;
+
+      // Module Coverage (L2-L5)
+      if (level >= 2 && levelMetrics.module_coverage) {
+        const coverage = levelMetrics.module_coverage.value;
+        html += createMetricRow('Module Coverage', coverage, 1.0);
+      }
+
+      // AC Coverage (L3)
+      if (level === 3 && levelMetrics.ac_coverage) {
+        const coverage = levelMetrics.ac_coverage.value;
+        html += createMetricRow('AC Coverage', coverage, 1.0);
+      }
+
+      // API Coverage (L4)
+      if (level === 4 && levelMetrics.api_coverage) {
+        const coverage = levelMetrics.api_coverage.value;
+        html += createMetricRow('API Coverage', coverage, 1.0);
+      }
+
+      // Pseudocode Coverage (L5)
+      if (level === 5 && levelMetrics.pseudocode_coverage) {
+        const coverage = levelMetrics.pseudocode_coverage.value;
+        html += createMetricRow('Pseudocode Coverage', coverage, 0.95);
+      }
+
+      // Cross-ref Pass Rate
+      if (levelMetrics.crossref_pass_rate) {
+        const passRate = levelMetrics.crossref_pass_rate.value;
+        html += createMetricRow('Cross-Ref Pass Rate', passRate, 1.0);
+      }
+
+      // Generation Time
+      if (levelMetrics.generation_time) {
+        const time = levelMetrics.generation_time.value;
+        const targets = { 1: 10, 2: 20, 3: 40, 4: 60, 5: 120 };
+        html += createMetricRow('Generation Time', time, targets[level], 's', true);
+      }
+
+      // Determinism Hash
+      if (levelMetrics.determinism_hash) {
+        const hash = levelMetrics.determinism_hash.data?.hash || '';
+        html += `
+          <div class="metric-row">
+            <div class="metric-label">Determinism Hash</div>
+            <div style="font-family: monospace; font-size: 0.85rem; color: #666;">
+              ${hash.substring(0, 16)}...
+            </div>
+            <div class="metric-status status-green">Stable</div>
+          </div>
+        `;
+      }
+
+      html += '</div>';
+      return html;
+    }
+
+    function createMetricRow(label, value, target, unit = '', reverse = false) {
+      const percentage = reverse ? (target / value) : (value / target);
+      const status = getStatus(value, target, reverse);
+      const displayValue = typeof value === 'number' ? value.toFixed(2) : value;
+      
+      return `
+        <div class="metric-row">
+          <div class="metric-label">${label}</div>
+          <div class="metric-bar">
+            <div class="metric-bar-fill ${status.replace('status-', '')}" 
+                 style="width: ${Math.min(percentage * 100, 100)}%; background: ${getStatusColor(status)}"></div>
+            <div class="metric-bar-value">${displayValue}${unit}</div>
+          </div>
+          <div class="metric-status ${status}">${getStatusLabel(status)}</div>
+        </div>
+      `;
+    }
+
+    function getStatus(value, target, reverse = false) {
+      if (reverse) {
+        // For time, lower is better
+        if (value <= target) return 'status-green';
+        if (value <= target * 1.2) return 'status-amber';
+        return 'status-red';
+      } else {
+        // For coverage, higher is better
+        if (value >= target) return 'status-green';
+        if (value >= target * 0.9) return 'status-amber';
+        return 'status-red';
+      }
+    }
+
+    function getStatusColor(status) {
+      if (status === 'status-green') return '#00b894';
+      if (status === 'status-amber') return '#fdcb6e';
+      return '#e17055';
+    }
+
+    function getStatusLabel(status) {
+      if (status === 'status-green') return '✓ Pass';
+      if (status === 'status-amber') return '⚠ Warning';
+      return '✗ Fail';
+    }
+
+    function calculateOverallCoverage(metrics) {
+      let total = 0;
+      let count = 0;
+      for (let level = 2; level <= 5; level++) {
+        if (metrics[level]?.module_coverage?.value !== undefined) {
+          total += metrics[level].module_coverage.value;
+          count++;
+        }
+      }
+      const avg = count > 0 ? total / count : 0;
+      return { value: (avg * 100).toFixed(1), status: getStatus(avg, 1.0) };
+    }
+
+    function calculateAverageCrossRef(metrics) {
+      let total = 0;
+      let count = 0;
+      Object.values(metrics).forEach(levelMetrics => {
+        if (levelMetrics.crossref_pass_rate?.value !== undefined) {
+          total += levelMetrics.crossref_pass_rate.value;
+          count++;
+        }
+      });
+      return count > 0 ? total / count : 0;
+    }
+
+    function calculateAveragePerformance(metrics) {
+      let total = 0;
+      let count = 0;
+      Object.values(metrics).forEach(levelMetrics => {
+        if (levelMetrics.generation_time?.value !== undefined) {
+          total += levelMetrics.generation_time.value;
+          count++;
+        }
+      });
+      return count > 0 ? total / count : 0;
+    }
+
+    async function refreshMetrics() {
+      if (currentProjectId) {
+        await loadMetrics();
+      }
+    }
+
+    // Initialize on load
+    init();
+  </script>
+</body>
+</html>
+

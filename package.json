@@ -4,7 +4,8 @@
   "description": "AI-powered development scoping tool",
   "main": "src/index.js",
   "scripts": {
-    "start": "node src/cli.js",
+    "start": "node scripts/start.js",
+    "setup": "node scripts/setup.js",
     "web": "node src/web-server.js",
     "cli": "node src/cli.js",
     "setup-db": "node scripts/setup-database.js",
@@ -14,8 +15,23 @@
     "db:migrate:rollback": "node src/database/migrator.js down",
     "db:seed": "node src/database/seeds/seed.js",
     "test": "jest",
+    "test:unit": "jest tests/unit",
+    "test:integration": "jest tests/integration",
+    "test:security": "jest tests/security",
+    "test:load": "node tests/performance/load-test.js",
+    "test:coverage": "jest --coverage",
+    "test-project": "node scripts/test-project.js",
+    "generate-report": "node scripts/generate-report.js",
     "quick-test": "node scripts/quick-test.js",
-    "validate": "node scripts/validate-day1.js"
+    "validate": "node scripts/validate-day1.js",
+    "test:verify": "node scripts/test-verification.js",
+    "test:full-stack": "node scripts/full-stack-verification.js",
+    "test:verification": "node scripts/full-stack-verification.js",
+    "docs:validate": "node scripts/validate-docs.js",
+    "docs:metrics": "node scripts/compute-doc-metrics.js",
+    "docs:regression": "node scripts/regression-test.js",
+    "docs:golden": "node scripts/generate-golden-scopes.js",
+    "docs:measure": "node scripts/measure-doc-gen.js"
   },
   "keywords": [
     "scoping",
@@ -38,7 +54,8 @@
     "pdf-parse": "^2.4.5",
     "uuid": "^9.0.1",
     "winston": "^3.11.0",
-    "xlsx": "^0.20.2"
+    "xlsx": "^0.20.2",
+    "ajv": "^8.12.0"
   },
   "devDependencies": {
     "jest": "^29.7.0"

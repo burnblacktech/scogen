@@ -1,11 +1,38 @@
 const { v4: uuidv4 } = require('uuid');
 
+/**
+ * Refiner Module
+ * 
+ * Applies psychological profile and budget constraints to parsed scope.
+ * Prioritizes modules, applies persona logic, and calculates feasibility.
+ * 
+ * @class Refiner
+ */
 class Refiner {
+  /**
+   * Create a Refiner instance
+   * @param {Object} library - Library instance
+   * @param {Object} logger - Logger instance
+   */
   constructor(library, logger) {
     this.library = library;
     this.logger = logger;
   }
 
+  /**
+   * Refine parsed scope with psychological and budget adjustments
+   * 
+   * @param {Object} parsedScope - Parsed scope from Parser
+   * @param {Array<Object>} parsedScope.modules - Modules to refine
+   * @param {Array} parsedScope.edges - Edges to refine
+   * @param {Object} parsedScope.intent - Intent information
+   * @param {Object} psychProfile - Psychological profile adjustments
+   * @param {string} budgetTier - Budget tier ('tight', 'moderate', 'flexible')
+   * @param {Object} domainContext - Domain context
+   * @param {Object} options - Refinement options
+   * @param {Object} options.projectDetails - Project details with budget/deadline constraints (optional)
+   * @returns {Object} Refined scope with modules, edges, and feasibility
+   */
   refine(parsedScope, psychProfile, budgetTier, domainContext, options = {}) {
     let modules = [...parsedScope.modules];
     let edges = [...parsedScope.edges];
@@ -164,10 +191,10 @@ class Refiner {
       return { modules: adjusted, changes };
     }
 
-    // Estimate current effort from scope
+    // Estimate current effort from scope using centralized utility
+    const { getComplexityDays } = require('../utils/module-utils');
     const totalEffort = modules.reduce((sum, mod) => {
-      const complexity = { low: 1, med: 2, high: 4 }[mod.complexity] || 2;
-      return sum + complexity;
+      return sum + getComplexityDays(mod.complexity);
     }, 0);
 
     // If maxBudget provided, warn if estimated cost exceeds it (but don't cap)

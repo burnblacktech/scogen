@@ -1,19 +1,49 @@
 const { v4: uuidv4 } = require('uuid');
 
+/**
+ * Parser Module
+ * 
+ * Converts extracted intent into technical modules and edges.
+ * Handles module normalization, complexity inference, and dependency detection.
+ * 
+ * @class Parser
+ */
 class Parser {
+  /**
+   * Create a Parser instance
+   * @param {Object} library - Library instance for module normalization
+   * @param {Object} logger - Logger instance
+   */
   constructor(library, logger) {
     this.library = library;
     this.logger = logger;
   }
 
+  /**
+   * Parse extracted intent into technical modules and edges
+   * 
+   * @param {Object} extractedIntent - Extracted intent from input analysis
+   * @param {Array<string>} extractedIntent.modules - User-mentioned modules
+   * @param {Array} extractedIntent.edges - User-mentioned edges (optional)
+   * @param {string} extractedIntent.industry - Industry context (optional)
+   * @param {string} extractedIntent.useCase - Use case type (optional)
+   * @param {Object} domainContext - Domain context with hidden edges (optional)
+   * @returns {Object} Parsed scope with modules, edges, and intent
+   */
   parse(extractedIntent, domainContext) {
     const modules = [];
     const edges = [];
 
-    // Validate input
+    // Validate input with defensive defaults
     if (!extractedIntent) {
       this.logger.warn('Parser received undefined extractedIntent, using defaults');
       extractedIntent = { modules: [], industry: 'generic', useCase: 'application' };
+    }
+    
+    // Ensure modules is an array
+    if (!Array.isArray(extractedIntent.modules)) {
+      this.logger.warn('Parser received non-array modules, converting to array');
+      extractedIntent.modules = [];
     }
 
     // Step 1: Normalize user-mentioned modules
@@ -64,16 +94,12 @@ class Parser {
   }
 
   normalizeModules(rawModules) {
-    // Ensure rawModules is an array
-    if (!Array.isArray(rawModules)) {
-      this.logger.warn('normalizeModules received non-array input', { 
-        type: typeof rawModules,
-        value: rawModules 
-      });
-      return [];
-    }
+    const { normalizeModuleArray } = require('../utils/module-utils');
     
-    return rawModules.map(raw => {
+    // Use centralized array validation
+    const modules = normalizeModuleArray(rawModules, this.logger);
+    
+    return modules.map(raw => {
       // Handle different input types
       const moduleName = typeof raw === 'string' ? raw : (raw.name || raw.module || String(raw));
       const canonical = this.library.normalizeModuleName(moduleName);
@@ -115,8 +141,24 @@ class Parser {
       'Analytics': 'high',
       'Notifications': 'low',
       'Search': 'low',
-      'API': 'med'
+      'API': 'med',
+      'Payment': 'high',
+      'Billing': 'high',
+      'Integration': 'high',
+      'Reporting': 'med',
+      'Admin': 'med',
+      'User': 'low',
+      'Settings': 'low'
     };
+
+    // Check if module name contains complexity indicators
+    const nameLower = moduleName.toLowerCase();
+    if (nameLower.includes('engine') || nameLower.includes('calculation') || nameLower.includes('analytics')) {
+      return 'high';
+    }
+    if (nameLower.includes('notification') || nameLower.includes('search') || nameLower.includes('settings')) {
+      return 'low';
+    }
 
     return complexityMap[moduleName] || 'med';
   }

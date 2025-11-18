@@ -1,8 +1,22 @@
+/**
+ * Estimator Module
+ * 
+ * Calculates cost and timeline estimates based on refined scope, complexity, and domain context.
+ * Supports both module-level and component-level (technical breakdown) estimation.
+ * 
+ * @class Estimator
+ */
 class Estimator {
+  /**
+   * Create an Estimator instance
+   * @param {Object} library - Library instance for module lookups
+   * @param {Object} logger - Logger instance for logging
+   */
   constructor(library, logger) {
     this.library = library;
     this.logger = logger;
     
+    /** @type {Object<string, number>} Hourly rates by industry */
     this.HOURLY_RATES = {
       retail: 80,
       saas: 100,
@@ -12,12 +26,14 @@ class Estimator {
       generic: 85
     };
 
+    /** @type {Object<string, number>} Budget caps by tier (in thousands) */
     this.BUDGET_CAPS = {
       tight: 500,
       moderate: 2000,
       flexible: 10000
     };
 
+    /** @type {Object<string, number>} Base effort days by complexity (kept for backward compatibility) */
     this.COMPLEXITY_DAYS = {
       low: 1,
       med: 2,
@@ -150,7 +166,24 @@ class Estimator {
     return Math.min(0.95, confidence); // Cap at 95%
   }
 
+  /**
+   * Generate cost and timeline estimate
+   * 
+   * @param {Object} refinedScope - Refined scope with modules and edges
+   * @param {string} refinedScope.modules - Array of module objects
+   * @param {string} budgetTier - Budget tier ('tight', 'moderate', 'flexible')
+   * @param {Object} psychProfile - Psychological profile adjustments
+   * @param {Object} domainContext - Domain context (industry, scale, etc.)
+   * @param {Object} generatedPlan - Generated plan (optional)
+   * @param {Object|null} technicalBreakdown - Technical breakdown for component-level estimation (optional)
+   * @returns {Object} Estimate object with timeline, cost, savings, confidence, and comparisons
+   */
   estimate(refinedScope, budgetTier, psychProfile, domainContext, generatedPlan, technicalBreakdown = null) {
+    // Validate required parameters
+    const { validateRequired, validateObject } = require('../utils/validators');
+    validateRequired(refinedScope, 'refinedScope');
+    validateObject(refinedScope, 'refinedScope', ['modules']);
+    
     // If technical breakdown is available, use component-level calculation
     if (technicalBreakdown && technicalBreakdown.technicalBreakdowns) {
       return this.calculateFromTechnicalBreakdown(technicalBreakdown, refinedScope, budgetTier, psychProfile, domainContext);
@@ -205,13 +238,24 @@ class Estimator {
     };
   }
 
+  /**
+   * Calculate project timeline based on modules
+   * 
+   * @param {Array<Object>} modules - Array of module objects
+   * @param {Object} psychProfile - Psychological profile adjustments
+   * @param {Object} domainContext - Domain context
+   * @param {Object} generatedPlan - Generated plan (optional)
+   * @param {string} budgetTier - Budget tier
+   * @returns {Object} Timeline object with days, weeks, months, range, and confidence
+   */
   calculateTimeline(modules, psychProfile, domainContext, generatedPlan, budgetTier) {
     const activeModules = modules.filter(m => m.priority !== 'deferred');
 
     let baseDays = 0;
     
     activeModules.forEach(mod => {
-      let moduleEffort = this.COMPLEXITY_DAYS[mod.complexity] || 2;
+      // Use centralized complexity mapping
+      let moduleEffort = getComplexityDays(mod.complexity);
 
       if (mod.reusable) {
         const reuse = this.library.getReusableModule(mod.name, domainContext.industry || 'generic');
@@ -284,7 +328,9 @@ class Estimator {
     let reuseDiscount = 0;
     reusableModules.forEach(mod => {
       const reuse = this.library.getReusableModule(mod.name, domainContext.industry || 'generic');
-      const moduleBaseCost = this.COMPLEXITY_DAYS[mod.complexity] * hoursPerDay * hourlyRate;
+      // Use centralized complexity mapping
+      const days = getComplexityDays(mod.complexity);
+      const moduleBaseCost = days * hoursPerDay * hourlyRate;
       reuseDiscount += moduleBaseCost * 0.5;
     });
 
@@ -344,7 +390,9 @@ class Estimator {
     let totalSavings = 0;
 
     reusableModules.forEach(mod => {
-      const moduleBaseCost = this.COMPLEXITY_DAYS[mod.complexity] * 6 * hourlyRate;
+      // Use centralized complexity mapping
+      const days = getComplexityDays(mod.complexity);
+      const moduleBaseCost = days * 6 * hourlyRate;
       totalSavings += moduleBaseCost * 0.5;
     });
 

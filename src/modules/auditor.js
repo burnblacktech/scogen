@@ -246,16 +246,8 @@ class Auditor {
     // REMOVED: Hardcoded budget caps - timeline is calculated from scope
     // Budget constraints are handled in refiner as advisory warnings
     
-    // Keep other coherence checks (e.g., cost vs timeline consistency)
-    if (false) { // Placeholder - add other checks here if needed
-      issues.push({
-        desc: `Placeholder for future coherence checks`,
-        score: 7,
-        source: 'coherence_check',
-        fixed: false,
-        flagged: true
-      });
-    }
+    // Future coherence checks can be added here (e.g., cost vs timeline consistency)
+    // Currently returns empty issues array as budget constraints are handled elsewhere
 
     return { issues };
   }

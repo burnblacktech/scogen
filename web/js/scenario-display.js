@@ -1,7 +1,16 @@
 /**
  * Scenario Display Module
  * Displays the Possibility Matrix with all viable scenarios
+ * Ensures ALL modules are displayed regardless of budget constraints
  */
+
+// Helper function for HTML escaping
+function escapeHtml(text) {
+    if (text === null || text === undefined) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
 
 function displayScenarios(scenarios) {
     if (!scenarios || !scenarios.scenarios || scenarios.scenarios.length === 0) {
@@ -13,17 +22,27 @@ function displayScenarios(scenarios) {
 
     // Handle both old format (scenarios.baseline) and new format (scenarios.baselineEstimate)
     const baseline = scenarios.baseline || scenarios.baselineEstimate || {};
-    const scenarioList = scenarios.scenarios || [];
+    const scenarioList = Array.isArray(scenarios.scenarios) ? scenarios.scenarios : [];
     // Handle both old format (scenarios.recommendation as string) and new format (scenarios.recommendation as object)
     const recommendation = typeof scenarios.recommendation === 'string' 
       ? scenarios.recommendation 
       : (scenarios.recommendation?.primary || 'baseline');
     const constraints = scenarios.constraints || {};
 
+    // Defensive check: ensure we have scenarios to display
+    if (scenarioList.length === 0) {
+        container.innerHTML = '<p style="color: #666;">No scenarios available to display.</p>';
+        return;
+    }
+
+    const baselineCost = baseline?.cost?.total || baseline?.cost || 0;
+    const baselineTimeline = baseline?.timeline?.withRisk || baseline?.timeline?.days || baseline?.timeline || 0;
+    const baselineTimelineWeeks = typeof baselineTimeline === 'number' ? Math.round(baselineTimeline / 7) : 0;
+
     let html = `
         <h2>🎯 Delivery Options (All Viable Paths)</h2>
         <p style="color: #666; margin-bottom: 20px;">
-            Your baseline scope requires <strong>₹${formatIndianCurrency(baseline.cost)}</strong> and <strong>${baseline.timeline} weeks</strong>.
+            Your baseline scope requires <strong>₹${formatIndianCurrency(baselineCost)}</strong> and <strong>${baselineTimelineWeeks} weeks</strong>.
             ${constraints.maxBudget || constraints.targetDeadline ? 'Here are multiple ways to meet your constraints:' : 'Here are different approaches you can take:'}
         </p>
     `;
@@ -37,16 +56,16 @@ function displayScenarios(scenarios) {
                     ${constraints.maxBudget ? `
                         <div>
                             <strong>Budget:</strong> ₹${formatIndianCurrency(constraints.maxBudget)}
-                            ${baseline.cost > constraints.maxBudget ? 
-                                ` <span style="color: #f44336;">(Baseline exceeds by ₹${formatIndianCurrency(baseline.cost - constraints.maxBudget)})</span>` : 
+                            ${baselineCost > constraints.maxBudget ? 
+                                ` <span style="color: #f44336;">(Baseline exceeds by ₹${formatIndianCurrency(baselineCost - constraints.maxBudget)})</span>` : 
                                 ` <span style="color: #4CAF50;">✓ Within budget</span>`}
                         </div>
                     ` : ''}
                     ${constraints.targetDeadline ? `
                         <div>
                             <strong>Deadline:</strong> ${constraints.targetDeadline}
-                            ${baseline.timeline > parseDeadline(constraints.targetDeadline) ? 
-                                ` <span style="color: #f44336;">(Baseline exceeds by ${Math.round(baseline.timeline - parseDeadline(constraints.targetDeadline))} weeks)</span>` : 
+                            ${baselineTimelineWeeks > parseDeadline(constraints.targetDeadline) ? 
+                                ` <span style="color: #f44336;">(Baseline exceeds by ${Math.round(baselineTimelineWeeks - parseDeadline(constraints.targetDeadline))} weeks)</span>` : 
                                 ` <span style="color: #4CAF50;">✓ Within timeline</span>`}
                         </div>
                     ` : ''}
@@ -142,13 +161,33 @@ function displayScenarios(scenarios) {
 
                 ${scenario.modules ? `
                     <div style="margin-bottom: 15px;">
-                        <strong>Scope:</strong> ${Array.isArray(scenario.modules) ? scenario.modules.length : 0} modules
+                        <strong>Scope:</strong> ${Array.isArray(scenario.modules) ? scenario.modules.length : scenario.moduleCount || 0} modules
                         ${scenario.deferred ? ` (${scenario.deferred.length} deferred to Phase 2)` : ''}
+                        ${Array.isArray(scenario.modules) && scenario.modules.length > 0 ? `
+                            <div style="margin-top: 10px; padding: 10px; background: #f0f7ff; border-radius: 4px; font-size: 13px;">
+                                <strong>All Modules Included:</strong>
+                                <ul style="margin: 5px 0 0 0; padding-left: 20px; columns: 2; column-gap: 20px;">
+                                    ${scenario.modules.map(m => `<li>${typeof m === 'string' ? escapeHtml(m) : escapeHtml(m.name || m.id || 'Module')}</li>`).join('')}
+                                </ul>
+                            </div>
+                        ` : ''}
                     </div>
                 ` : scenario.scope ? `
                     <div style="margin-bottom: 15px;">
                         <strong>Scope:</strong> ${scenario.scope.modules?.length || 0} modules
                         ${scenario.deferred ? ` (${scenario.deferred.length} deferred to Phase 2)` : ''}
+                        ${scenario.scope.modules && Array.isArray(scenario.scope.modules) && scenario.scope.modules.length > 0 ? `
+                            <div style="margin-top: 10px; padding: 10px; background: #f0f7ff; border-radius: 4px; font-size: 13px;">
+                                <strong>All Modules Included:</strong>
+                                <ul style="margin: 5px 0 0 0; padding-left: 20px; columns: 2; column-gap: 20px;">
+                                    ${scenario.scope.modules.map(m => `<li>${typeof m === 'string' ? escapeHtml(m) : escapeHtml(m.name || m.id || 'Module')}</li>`).join('')}
+                                </ul>
+                            </div>
+                        ` : ''}
+                    </div>
+                ` : scenario.moduleCount ? `
+                    <div style="margin-bottom: 15px;">
+                        <strong>Scope:</strong> ${scenario.moduleCount} modules (all modules preserved)
                     </div>
                 ` : ''}
 
