@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Complete Project - SCOGEN</title>
+    <link rel="stylesheet" href="css/style.css">
+    <style>
+        .completion-container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .comparison-table {
+            width: 100%;
+            background: white;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+
+        .comparison-table th {
+            background: #f3f4f6;
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+        }
+
+        .comparison-table td {
+            padding: 12px;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .comparison-table input {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+        }
+
+        .variance-positive {
+            color: #10b981;
+            font-weight: bold;
+        }
+
+        .variance-negative {
+            color: #ef4444;
+            font-weight: bold;
+        }
+
+        .variance-neutral {
+            color: #6b7280;
+        }
+
+        .reason-chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .reason-chip {
+            padding: 8px 16px;
+            border: 2px solid #e5e7eb;
+            border-radius: 20px;
+            background: white;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .reason-chip:hover {
+            border-color: #3b82f6;
+            background: #eff6ff;
+        }
+
+        .reason-chip.selected {
+            border-color: #3b82f6;
+            background: #3b82f6;
+            color: white;
+        }
+
+        .satisfaction-rating {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            margin: 20px 0;
+        }
+
+        .star {
+            font-size: 3rem;
+            color: #d1d5db;
+            cursor: pointer;
+            transition: color 0.2s;
+        }
+
+        .star:hover,
+        .star.filled {
+            color: #fbbf24;
+        }
+
+        .learning-preview {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 12px;
+            margin-top: 20px;
+        }
+
+        .accuracy-meter {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            margin-top: 15px;
+        }
+
+        .accuracy-bar {
+            flex: 1;
+            height: 30px;
+            background: rgba(255,255,255,0.2);
+            border-radius: 15px;
+            overflow: hidden;
+        }
+
+        .accuracy-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #ef4444 0%, #fbbf24 50%, #10b981 100%);
+            transition: width 0.5s ease;
+        }
+
+        .btn-complete {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
+            padding: 15px 40px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1.125rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s;
+            width: 100%;
+            margin-top: 20px;
+        }
+
+        .btn-complete:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(16, 185, 129, 0.3);
+        }
+
+        .insights-section {
+            background: #f9fafb;
+            border-radius: 12px;
+            padding: 20px;
+            margin-top: 20px;
+        }
+
+        .insight-item {
+            display: flex;
+            align-items: start;
+            gap: 12px;
+            margin-bottom: 15px;
+        }
+
+        .insight-icon {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+        }
+
+        .insight-icon.learning {
+            background: #dbeafe;
+            color: #2563eb;
+        }
+
+        .insight-icon.pattern {
+            background: #fef3c7;
+            color: #d97706;
+        }
+
+        .insight-icon.improvement {
+            background: #d1fae5;
+            color: #059669;
+        }
+
+        .card {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="completion-container">
+        <h1>Complete Project & Train System</h1>
+        <p style="color: #6b7280; margin-bottom: 30px;">
+            Help SCOGEN learn and improve by providing actual project data
+        </p>
+
+        <div id="projectInfo" class="card">
+            <!-- Project info loads here -->
+        </div>
+
+        <table class="comparison-table">
+            <thead>
+                <tr>
+                    <th>Metric</th>
+                    <th>Estimated</th>
+                    <th>Actual</th>
+                    <th>Variance</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Hours</td>
+                    <td id="estimatedHours">-</td>
+                    <td><input type="number" id="actualHours" placeholder="Enter actual hours"></td>
+                    <td id="hoursVariance">-</td>
+                </tr>
+                <tr>
+                    <td>Cost (₹)</td>
+                    <td id="estimatedCost">-</td>
+                    <td><input type="number" id="actualCost" placeholder="Enter actual cost"></td>
+                    <td id="costVariance">-</td>
+                </tr>
+                <tr>
+                    <td>Duration (days)</td>
+                    <td id="estimatedDuration">-</td>
+                    <td><input type="number" id="actualDuration" placeholder="Enter actual days"></td>
+                    <td id="durationVariance">-</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <div class="card">
+            <h3>What caused the variance? (Select all that apply)</h3>
+            <div class="reason-chips">
+                <div class="reason-chip" data-reason="scope_change">Scope Changes</div>
+                <div class="reason-chip" data-reason="complexity_underestimated">Complexity Underestimated</div>
+                <div class="reason-chip" data-reason="client_delays">Client Delays</div>
+                <div class="reason-chip" data-reason="team_changes">Team Changes</div>
+                <div class="reason-chip" data-reason="technical_challenges">Technical Challenges</div>
+                <div class="reason-chip" data-reason="integration_issues">Integration Issues</div>
+                <div class="reason-chip" data-reason="requirement_unclear">Unclear Requirements</div>
+                <div class="reason-chip" data-reason="external_dependencies">External Dependencies</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>Client Satisfaction</h3>
+            <div class="satisfaction-rating">
+                <span class="star" data-rating="1">★</span>
+                <span class="star" data-rating="2">★</span>
+                <span class="star" data-rating="3">★</span>
+                <span class="star" data-rating="4">★</span>
+                <span class="star" data-rating="5">★</span>
+            </div>
+            <p style="text-align: center; color: #6b7280; margin-top: 10px;">
+                <span id="satisfactionText">Click to rate</span>
+            </p>
+        </div>
+
+        <div class="card">
+            <h3>Additional Insights (Optional)</h3>
+            <textarea 
+                id="additionalInsights" 
+                rows="4" 
+                style="width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px;"
+                placeholder="Any specific learnings, patterns noticed, or suggestions for future projects..."
+            ></textarea>
+        </div>
+
+        <div class="learning-preview">
+            <h3>🧠 System Learning Preview</h3>
+            <p>Based on this project, SCOGEN will:</p>
+            <div id="learningPreview" style="margin-top: 15px;">
+                <!-- Learning preview loads here -->
+            </div>
+
+            <div class="accuracy-meter">
+                <span>New Accuracy:</span>
+                <div class="accuracy-bar">
+                    <div class="accuracy-fill" id="accuracyFill" style="width: 0%"></div>
+                </div>
+                <span id="accuracyPercent">--%</span>
+            </div>
+        </div>
+
+        <div class="insights-section" id="insightsSection" style="display: none;">
+            <h3>🔍 Patterns Detected</h3>
+            <div id="patternsList">
+                <!-- Patterns will be shown here -->
+            </div>
+        </div>
+
+        <button class="btn-complete" onclick="completeProject()">
+            Complete Project & Train System
+        </button>
+    </div>
+
+    <script src="js/api-client.js"></script>
+    <script>
+        const api = new ApiClient();
+        let projectId = null;
+        let projectData = null;
+        let selectedReasons = [];
+        let clientSatisfaction = 0;
+
+        // Get project ID from URL
+        const urlParams = new URLSearchParams(window.location.search);
+        projectId = urlParams.get('id') || urlParams.get('projectId');
+
+        if (!projectId) {
+            alert('No project ID provided');
+            window.location.href = '/dashboard.html';
+        }
+
+        // Load project data
+        async function loadProjectData() {
+            try {
+                let response;
+                if (api) {
+                    response = await api.request(`/v2/projects/${projectId}`);
+                } else {
+                    const token = localStorage.getItem('token');
+                    const fetchResponse = await fetch(`/api/v2/projects/${projectId}`, {
+                        headers: {
+                            ...(token && { 'Authorization': `Bearer ${token}` })
+                        }
+                    });
+                    response = await fetchResponse.json();
+                }
+
+                projectData = response;
+
+                // Display project info
+                document.getElementById('projectInfo').innerHTML = `
+                    <h2>${projectData.project_name}</h2>
+                    <p>Client: ${projectData.client_name || 'N/A'} | Industry: ${projectData.client_industry || 'N/A'}</p>
+                    <p>Status: <span style="color: #10b981;">Ready for Completion</span></p>
+                `;
+
+                // Display estimates
+                const totalHours = projectData.features?.reduce((sum, f) => sum + (f.estimated_hours || 0), 0) || 0;
+                document.getElementById('estimatedHours').textContent = Math.round(totalHours);
+
+                if (projectData.costEstimate) {
+                    document.getElementById('estimatedCost').textContent = 
+                        `₹${(projectData.costEstimate.total_cost / 100000).toFixed(2)}L`;
+                } else {
+                    document.getElementById('estimatedCost').textContent = 'N/A';
+                }
+
+                const duration = projectData.sprintPlans?.length * 14 || 30; // 2-week sprints
+                document.getElementById('estimatedDuration').textContent = duration;
+
+            } catch (error) {
+                console.error('Failed to load project:', error);
+                alert('Failed to load project data');
+            }
+        }
+
+        // Calculate variance
+        function calculateVariance() {
+            const actualHours = parseFloat(document.getElementById('actualHours').value) || 0;
+            const actualCost = parseFloat(document.getElementById('actualCost').value) || 0;
+            const actualDuration = parseFloat(document.getElementById('actualDuration').value) || 0;
+
+            if (actualHours > 0) {
+                const estimatedHours = parseFloat(document.getElementById('estimatedHours').textContent) || 1;
+                const hoursVariance = ((actualHours - estimatedHours) / estimatedHours * 100).toFixed(0);
+
+                const varianceElem = document.getElementById('hoursVariance');
+                varianceElem.textContent = `${hoursVariance > 0 ? '+' : ''}${hoursVariance}%`;
+                varianceElem.className = hoursVariance > 10 ? 'variance-negative' : 
+                                        hoursVariance < -10 ? 'variance-positive' : 'variance-neutral';
+            }
+
+            if (actualCost > 0) {
+                const estimatedCostText = document.getElementById('estimatedCost').textContent;
+                if (estimatedCostText !== 'N/A') {
+                    const estimatedCost = parseFloat(estimatedCostText.replace('₹', '').replace('L', '')) * 100000;
+                    const costVariance = ((actualCost - estimatedCost) / estimatedCost * 100).toFixed(0);
+
+                    const varianceElem = document.getElementById('costVariance');
+                    varianceElem.textContent = `${costVariance > 0 ? '+' : ''}${costVariance}%`;
+                    varianceElem.className = costVariance > 10 ? 'variance-negative' : 
+                                            costVariance < -10 ? 'variance-positive' : 'variance-neutral';
+                }
+            }
+
+            if (actualDuration > 0) {
+                const estimatedDuration = parseFloat(document.getElementById('estimatedDuration').textContent) || 1;
+                const durationVariance = ((actualDuration - estimatedDuration) / estimatedDuration * 100).toFixed(0);
+
+                const varianceElem = document.getElementById('durationVariance');
+                varianceElem.textContent = `${durationVariance > 0 ? '+' : ''}${durationVariance}%`;
+                varianceElem.className = durationVariance > 10 ? 'variance-negative' : 
+                                         durationVariance < -10 ? 'variance-positive' : 'variance-neutral';
+            }
+
+            updateLearningPreview();
+        }
+
+        // Update learning preview
+        function updateLearningPreview() {
+            const actualHours = parseFloat(document.getElementById('actualHours').value) || 0;
+            const estimatedHours = parseFloat(document.getElementById('estimatedHours').textContent) || 1;
+
+            if (actualHours > 0) {
+                const accuracy = Math.max(0, Math.min(100, 100 - Math.abs(actualHours - estimatedHours) / estimatedHours * 100));
+
+                document.getElementById('accuracyFill').style.width = `${accuracy}%`;
+                document.getElementById('accuracyPercent').textContent = `${accuracy.toFixed(0)}%`;
+
+                const learnings = [];
+
+                if (selectedReasons.includes('complexity_underestimated')) {
+                    learnings.push('• Adjust complexity scoring for similar features');
+                }
+                if (selectedReasons.includes('integration_issues')) {
+                    learnings.push('• Increase buffer for integration tasks');
+                }
+                if (accuracy > 80) {
+                    learnings.push('• Reinforce current estimation patterns');
+                } else {
+                    learnings.push('• Identify and correct estimation biases');
+                }
+
+                document.getElementById('learningPreview').innerHTML = learnings.join('<br>');
+
+                // Show insights if patterns detected
+                if (selectedReasons.length > 2) {
+                    showInsights();
+                }
+            }
+        }
+
+        // Show insights
+        function showInsights() {
+            document.getElementById('insightsSection').style.display = 'block';
+
+            const patterns = [];
+
+            if (selectedReasons.includes('complexity_underestimated')) {
+                patterns.push({
+                    type: 'pattern',
+                    text: `${projectData?.client_industry || 'Similar'} projects tend to be more complex than estimated`
+                });
+            }
+
+            if (selectedReasons.includes('client_delays')) {
+                patterns.push({
+                    type: 'learning',
+                    text: 'Consider adding client response buffer in timeline'
+                });
+            }
+
+            patterns.push({
+                type: 'improvement',
+                text: 'System accuracy will improve by ~5% after learning from this project'
+            });
+
+            document.getElementById('patternsList').innerHTML = patterns.map(p => `
+                <div class="insight-item">
+                    <div class="insight-icon ${p.type}">${
+                        p.type === 'learning' ? '💡' : 
+                        p.type === 'pattern' ? '🔍' : '📈'
+                    }</div>
+                    <div>${p.text}</div>
+                </div>
+            `).join('');
+        }
+
+        // Input listeners
+        document.getElementById('actualHours').addEventListener('input', calculateVariance);
+        document.getElementById('actualCost').addEventListener('input', calculateVariance);
+        document.getElementById('actualDuration').addEventListener('input', calculateVariance);
+
+        // Reason selection
+        document.querySelectorAll('.reason-chip').forEach(chip => {
+            chip.addEventListener('click', () => {
+                const reason = chip.dataset.reason;
+                if (selectedReasons.includes(reason)) {
+                    selectedReasons = selectedReasons.filter(r => r !== reason);
+                    chip.classList.remove('selected');
+                } else {
+                    selectedReasons.push(reason);
+                    chip.classList.add('selected');
+                }
+                updateLearningPreview();
+            });
+        });
+
+        // Star rating
+        document.querySelectorAll('.star').forEach(star => {
+            star.addEventListener('click', () => {
+                clientSatisfaction = parseInt(star.dataset.rating);
+                document.querySelectorAll('.star').forEach((s, index) => {
+                    if (index < clientSatisfaction) {
+                        s.classList.add('filled');
+                    } else {
+                        s.classList.remove('filled');
+                    }
+                });
+
+                const satisfactionTexts = [
+                    '', 'Very Unsatisfied', 'Unsatisfied', 'Neutral', 'Satisfied', 'Very Satisfied'
+                ];
+                document.getElementById('satisfactionText').textContent = satisfactionTexts[clientSatisfaction];
+            });
+        });
+
+        // Complete project
+        async function completeProject() {
+            const actualHours = parseFloat(document.getElementById('actualHours').value);
+            const actualCost = parseFloat(document.getElementById('actualCost').value);
+            const actualDuration = parseFloat(document.getElementById('actualDuration').value);
+            const additionalInsights = document.getElementById('additionalInsights').value;
+
+            if (!actualHours || !actualCost || !actualDuration) {
+                alert('Please enter all actual values');
+                return;
+            }
+
+            if (clientSatisfaction === 0) {
+                alert('Please rate client satisfaction');
+                return;
+            }
+
+            try {
+                // Submit completion data
+                let response;
+                if (api) {
+                    response = await api.request('/v2/learning/complete-project', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            projectId,
+                            actuals: {
+                                hours: actualHours,
+                                cost: actualCost,
+                                duration: actualDuration,
+                                clientSatisfaction,
+                                bugs: 0
+                            },
+                            varianceReasons: selectedReasons,
+                            insights: additionalInsights
+                        })
+                    });
+                } else {
+                    const token = localStorage.getItem('token');
+                    const fetchResponse = await fetch('/api/v2/learning/complete-project', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            ...(token && { 'Authorization': `Bearer ${token}` })
+                        },
+                        body: JSON.stringify({
+                            projectId,
+                            actuals: {
+                                hours: actualHours,
+                                cost: actualCost,
+                                duration: actualDuration,
+                                clientSatisfaction,
+                                bugs: 0
+                            },
+                            varianceReasons: selectedReasons,
+                            insights: additionalInsights
+                        })
+                    });
+                    response = await fetchResponse.json();
+                }
+
+                // Trigger learning
+                if (api) {
+                    await api.request('/v2/learning/learn-from-project', {
+                        method: 'POST',
+                        body: JSON.stringify({ projectId })
+                    });
+                } else {
+                    const token = localStorage.getItem('token');
+                    await fetch('/api/v2/learning/learn-from-project', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            ...(token && { 'Authorization': `Bearer ${token}` })
+                        },
+                        body: JSON.stringify({ projectId })
+                    });
+                }
+
+                // Show success
+                alert(`Project completed successfully!\nAccuracy: ${response.accuracy?.toFixed(0) || 'N/A'}%\nSystem has learned from this project.`);
+
+                // Redirect to dashboard
+                window.location.href = '/dashboard.html';
+
+            } catch (error) {
+                console.error('Failed to complete project:', error);
+                alert('Failed to complete project: ' + error.message);
+            }
+        }
+
+        // Load project data on page load
+        loadProjectData();
+    </script>
+</body>
+</html>
+

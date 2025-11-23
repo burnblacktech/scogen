@@ -202,8 +202,8 @@ class ScopeReviewer {
         const baselineEffort = baseline.module_efforts[module.name];
         if (baselineEffort) {
           // Estimate module effort from complexity
-          const complexityDays = { low: 1, medium: 2, high: 4, critical: 6 };
-          const moduleEffort = complexityDays[module.complexity] || 2;
+          const { getComplexityDays } = require('../utils/module-utils');
+          const moduleEffort = getComplexityDays(module.complexity);
           const difference = Math.abs(moduleEffort - baselineEffort) / baselineEffort;
           
           if (difference > 0.5) {  // >50% difference

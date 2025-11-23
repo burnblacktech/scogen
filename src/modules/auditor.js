@@ -1,4 +1,6 @@
 const { v4: uuidv4 } = require('uuid');
+const { handleError, wrapError, ErrorTypes } = require('../core/errors/ErrorHandler');
+const { validateRequired, validateObject, validateArray } = require('../utils/validators');
 
 class Auditor {
   constructor(library, logger) {
@@ -56,8 +58,18 @@ class Auditor {
   }
 
   audit(refinedScope, domainContext, estimate, budgetTier, psychProfile) {
-    let scope = JSON.parse(JSON.stringify(refinedScope));
-    let edges = [...scope.edges];
+    try {
+      // Validate required parameters
+      validateRequired(refinedScope, 'refinedScope');
+      validateObject(refinedScope, 'refinedScope', ['modules']);
+      validateArray(refinedScope.modules, 'refinedScope.modules', true);
+      validateRequired(domainContext, 'domainContext');
+      validateRequired(estimate, 'estimate');
+      validateRequired(budgetTier, 'budgetTier');
+      validateRequired(psychProfile, 'psychProfile');
+      
+      let scope = JSON.parse(JSON.stringify(refinedScope));
+      let edges = [...(scope.edges || [])];
 
     edges = this.addDomainEdges(edges, domainContext, scope);
     edges = this.deduplicateEdges(edges);
@@ -85,16 +97,25 @@ class Auditor {
       edges = edges.map(e => ({ ...e, fixed: false, flagged: true, mitigation: 'Auto-fix reduced feasibility—manual review needed' }));
     }
 
-    const summary = this.generateSummary(edges, autoAddCount);
+      const summary = this.generateSummary(edges, autoAddCount);
 
-    return {
-      auditedScope: {
-        modules: scope.modules,
-        edges,
-        feasibility: { ...scope.feasibility, score: Math.max(newFeasibility, scope.feasibility.score) },
-        auditSummary: summary
-      }
-    };
+      return {
+        auditedScope: {
+          modules: scope.modules,
+          edges,
+          feasibility: { ...scope.feasibility, score: Math.max(newFeasibility, scope.feasibility.score) },
+          auditSummary: summary
+        }
+      };
+    } catch (error) {
+      const standardized = handleError(error, this.logger, {
+        operation: 'audit',
+        refinedScope: refinedScope ? { moduleCount: refinedScope.modules?.length } : null,
+        domainContext: domainContext ? { industry: domainContext.industry } : null,
+        budgetTier
+      });
+      throw standardized;
+    }
   }
 
   addDomainEdges(existingEdges, domainContext, scope) {

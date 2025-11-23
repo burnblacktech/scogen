@@ -6,6 +6,18 @@
  * - Context extraction from requests
  * - Trust-based adjustments to output
  * - Non-proceed paths (questions, education, templates)
+ * 
+ * When to Use:
+ * - API requests where you want smart routing
+ * - When you need to handle low-quality inputs gracefully
+ * - When you want to provide educational content or templates instead of full analysis
+ * 
+ * Used By:
+ * - API routes when useEnhancedChain flag is set
+ * - ChainExecutorStep2 as base class
+ * 
+ * @see {@link ../../docs/02-modules/chain-executor-variants.md} for variant comparison
+ * @extends ChainExecutor
  */
 
 const ChainExecutor = require('./chain-executor');

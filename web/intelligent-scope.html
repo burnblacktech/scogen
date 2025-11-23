@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Intelligent Scope View - SCOGEN</title>
+    <link rel="stylesheet" href="css/intelligent-scope.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="js/api-client.js"></script>
+</head>
+<body>
+    <div id="app">
+        <!-- Header with Confidence Score -->
+        <div class="header-card">
+            <div class="header-content">
+                <div>
+                    <h1 id="projectName">Loading...</h1>
+                    <p id="clientName" class="text-gray-600"></p>
+                </div>
+                <div class="confidence-display">
+                    <div id="confidenceScore" class="confidence-value">Calculating...</div>
+                    <p class="confidence-label">Confidence Score</p>
+                    <p id="historicalProjects" class="confidence-subtext">Based on 0 similar projects</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Progressive Level Selector -->
+        <div class="level-selector">
+            <h2>Progressive Output Levels</h2>
+            <p style="color: #6b7280; margin-bottom: 20px;">
+                Choose the level of detail you need. Start with free discovery, upgrade as needed.
+            </p>
+            
+            <div class="level-tabs">
+                <button class="level-tab active" data-level="L1" onclick="scopeView.selectLevel('L1')">
+                    L1 Discovery
+                    <span class="level-price free">FREE</span>
+                </button>
+                <button class="level-tab" data-level="L2" onclick="scopeView.selectLevel('L2')">
+                    L2 Planning
+                    <span class="level-price">₹2,500</span>
+                </button>
+                <button class="level-tab" data-level="L3" onclick="scopeView.selectLevel('L3')">
+                    L3 Architecture
+                    <span class="level-price">₹10,000</span>
+                </button>
+                <button class="level-tab" data-level="L4" onclick="scopeView.selectLevel('L4')">
+                    L4 Implementation
+                    <span class="level-price">₹25,000</span>
+                </button>
+                <button class="level-tab" data-level="L5" onclick="scopeView.selectLevel('L5')">
+                    L5 Complete
+                    <span class="level-price">₹50,000</span>
+                </button>
+            </div>
+            
+            <div id="levelContent" class="level-content">
+                <!-- Content loads here based on selected level -->
+            </div>
+        </div>
+
+        <!-- Reusable Components Alert -->
+        <div id="componentsAlert" class="components-alert" style="display: none;">
+            <div class="alert-content">
+                <div class="alert-left">
+                    <span class="alert-icon">💡</span>
+                    <span id="componentsCount" class="alert-text">Found 0 reusable components</span>
+                </div>
+                <span id="componentsSavings" class="alert-savings">Save ~0 hours</span>
+            </div>
+        </div>
+
+        <!-- Tab Navigation -->
+        <div class="tab-container">
+            <nav class="tabs">
+                <button class="tab active" data-tab="overview">Overview</button>
+                <button class="tab" data-tab="complexity">Complexity</button>
+                <button class="tab" data-tab="scenarios">Scenarios</button>
+                <button class="tab" data-tab="timeline">Timeline</button>
+                <button class="tab" data-tab="components">Components</button>
+            </nav>
+        </div>
+
+        <!-- Content Area -->
+        <div class="content-area">
+            <!-- Overview Tab -->
+            <div id="overviewTab" class="tab-content active">
+                <div class="grid-2">
+                    <div class="card">
+                        <h3>Dynamic Cost Breakdown</h3>
+                        <div id="costBreakdown"></div>
+                        <div id="costConfidence" class="confidence-badge"></div>
+                        <div id="costExplanation" class="explanation"></div>
+                    </div>
+                    <div class="card">
+                        <h3>Quick Metrics</h3>
+                        <div id="quickMetrics"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Complexity Tab -->
+            <div id="complexityTab" class="tab-content">
+                <div id="complexityModules" class="modules-grid"></div>
+            </div>
+
+            <!-- Scenarios Tab -->
+            <div id="scenariosTab" class="tab-content">
+                <div id="scenariosComparison"></div>
+            </div>
+
+            <!-- Timeline Tab -->
+            <div id="timelineTab" class="tab-content">
+                <div id="timelineView"></div>
+            </div>
+
+            <!-- Components Tab -->
+            <div id="componentsTab" class="tab-content">
+                <div id="componentSuggestions"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/intelligent-scope.js"></script>
+</body>
+</html>
+

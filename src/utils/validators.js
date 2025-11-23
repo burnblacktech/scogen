@@ -3,7 +3,7 @@
  * Centralized input validation functions for consistent validation across modules
  */
 
-const { createError, ErrorTypes } = require('./error-handler');
+const { createError, ErrorTypes } = require('../core/errors/ErrorHandler');
 
 /**
  * Validate that value is not null or undefined

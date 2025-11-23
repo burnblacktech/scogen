@@ -1,5 +1,25 @@
-// src/modules/chain-executor-step3.js
-// Chain Executor with Technical Decomposition (Step 3)
+/**
+ * Chain Executor Step 3: Technical Decomposition
+ * 
+ * Extends ChainExecutorStep2 to add:
+ * - Technical decomposition of requirements
+ * - Resource-based cost estimation
+ * - Deliverable breakdown
+ * - Component-level estimation
+ * - Resource allocation
+ * 
+ * When to Use:
+ * - When you need detailed technical breakdown
+ * - For resource-based cost estimation
+ * - When you need component-level estimates
+ * - For detailed project planning
+ * 
+ * Used By:
+ * - ChainExecutorStep4 as base class
+ * 
+ * @see {@link ../../docs/02-modules/chain-executor-variants.md} for variant comparison
+ * @extends ChainExecutorStep2
+ */
 
 const ChainExecutorStep2 = require('./chain-executor-step2');
 const TechnicalDecomposer = require('./technical-decomposer');
@@ -28,7 +48,7 @@ class ChainExecutorStep3 extends ChainExecutorStep2 {
     }
 
     // Step 3: Technical Decomposition
-    console.log('\n🔨 Step 3: Technical Decomposition & Resource Allocation...');
+    console.log('\n[STEP 3] Technical Decomposition & Resource Allocation...');
 
     const decompositionContext = {
       domain: results.fullAnalysis.domainContext?.industry || options.projectDetails?.marketRegion || 'generic',
@@ -72,10 +92,10 @@ class ChainExecutorStep3 extends ChainExecutorStep2 {
     };
 
     // Log summary
-    console.log(`   ✅ Decomposed into ${decomposition.stats.totalDeliverables} deliverables`);
-    console.log(`   💰 Total cost: ₹${decomposition.totalCost.toLocaleString('en-IN')}`);
-    console.log(`   ⏱️ Timeline: ${decomposition.timeline.withBuffer} days`);
-    console.log(`   👥 Resources needed: ${decomposition.stats.resourceTypes} types`);
+    console.log(`   [OK] Decomposed into ${decomposition.stats.totalDeliverables} deliverables`);
+    console.log(`   [COST] Total cost: ₹${decomposition.totalCost.toLocaleString('en-IN')}`);
+    console.log(`   [TIME] Timeline: ${decomposition.timeline.withBuffer} days`);
+    console.log(`   [TEAM] Resources needed: ${decomposition.stats.resourceTypes} types`);
 
     // Cost breakdown
     console.log('\n   Resource Breakdown:');

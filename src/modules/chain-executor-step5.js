@@ -1,5 +1,25 @@
-// src/modules/chain-executor-step5.js
-// Chain Executor with Intelligent Scenario Generation (Step 5)
+/**
+ * Chain Executor Step 5: Intelligent Scenario Generation
+ * 
+ * Extends ChainExecutorStep4 to add:
+ * - Multiple scenario generation (MVP, Fast-track, Phased, etc.)
+ * - Scenario comparison and recommendation
+ * - Baseline estimate calculation
+ * - Constraint fitting (budget, timeline)
+ * - Scenario suitability scoring
+ * 
+ * When to Use:
+ * - When client needs multiple project options
+ * - For projects with flexible constraints
+ * - When you need scenario-based planning
+ * - For complex projects requiring phased approaches
+ * 
+ * Used By:
+ * - API routes when useStep5Chain flag is set
+ * 
+ * @see {@link ../../docs/02-modules/chain-executor-variants.md} for variant comparison
+ * @extends ChainExecutorStep4
+ */
 
 const ChainExecutorStep4 = require('./chain-executor-step4');
 const ScenarioGeneratorV2 = require('./scenario-generator-v2');
@@ -44,7 +64,7 @@ class ChainExecutorStep5 extends ChainExecutorStep4 {
       }
 
       // Step 5: Intelligent Scenario Generation
-      console.log('\n🎯 Step 5: Generating Intelligent Scenarios...');
+      console.log('\n[STEP 5] Generating Intelligent Scenarios...');
       this.logger.info('Step 5: Starting scenario generation', {
         hasTechnicalDecomposition: !!results.technicalDecomposition,
         hasRiskAssessment: !!results.riskAssessment,
@@ -119,7 +139,7 @@ class ChainExecutorStep5 extends ChainExecutorStep4 {
       };
 
     // Log summary
-    console.log(`   ✅ Generated ${scenarioResults.scenarios.length} scenarios`);
+    console.log(`   [OK] Generated ${scenarioResults.scenarios.length} scenarios`);
     console.log('\n   Baseline Estimate:');
     console.log(`     Cost: ₹${scenarioResults.baseline.cost.total.toLocaleString('en-IN')}`);
     console.log(`     Timeline: ${scenarioResults.baseline.timeline.withRisk} days`);
@@ -127,12 +147,12 @@ class ChainExecutorStep5 extends ChainExecutorStep4 {
 
     console.log('\n   Scenarios Generated:');
     for (const scenario of scenarioResults.scenarios) {
-      const budgetFit = scenario.constraintFit?.budget === 'fits' || scenario.constraintFit?.budget === 'perfect' ? '✅' : 
-                       scenario.constraintFit?.budget === 'close' ? '⚠️' : '❌';
-      const timelineFit = scenario.constraintFit?.timeline === 'fits' || scenario.constraintFit?.timeline === 'perfect' ? '✅' : 
-                         scenario.constraintFit?.timeline === 'close' ? '⚠️' : '❌';
+      const budgetFit = scenario.constraintFit?.budget === 'fits' || scenario.constraintFit?.budget === 'perfect' ? '[OK]' : 
+                       scenario.constraintFit?.budget === 'close' ? '[WARN]' : '[FAIL]';
+      const timelineFit = scenario.constraintFit?.timeline === 'fits' || scenario.constraintFit?.timeline === 'perfect' ? '[OK]' : 
+                         scenario.constraintFit?.timeline === 'close' ? '[WARN]' : '[FAIL]';
       
-      console.log(`\n     ${scenario.recommended ? '⭐' : '○'} ${scenario.name}`);
+      console.log(`\n     ${scenario.recommended ? '[RECOMMENDED]' : '[OPTION]'} ${scenario.name}`);
       console.log(`       Cost: ₹${scenario.cost.withContingency.toLocaleString('en-IN')} ${budgetFit}`);
       console.log(`       Timeline: ${scenario.timeline.days} days ${timelineFit}`);
       console.log(`       Modules: ${Array.isArray(scenario.modules) ? scenario.modules.length : (scenario.modules || 0)}`);
@@ -147,7 +167,7 @@ class ChainExecutorStep5 extends ChainExecutorStep4 {
       }
     }
 
-      console.log(`\n   📌 Recommendation: ${scenarioResults.recommendation.primary}`);
+      console.log(`\n   [RECOMMENDATION] ${scenarioResults.recommendation.primary}`);
       console.log(`      Reason: ${scenarioResults.recommendation.reasoning}`);
       console.log(`      Key Insight: ${scenarioResults.recommendation.keyInsight}`);
 

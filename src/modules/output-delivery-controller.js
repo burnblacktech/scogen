@@ -103,9 +103,10 @@ class OutputDeliveryController {
    * Generate output for specific level
    * @param {Object} analysis - Complete analysis
    * @param {string} level - Output level
+   * @param {string} projectId - Project ID for enhancement
    * @returns {Object} Level-specific output
    */
-  generateLevelOutput(analysis, level) {
+  async generateLevelOutput(analysis, level, projectId = null) {
     const levelConfig = this.levels[level];
     if (!levelConfig) {
       throw new Error(`Invalid level: ${level}`);
@@ -126,6 +127,23 @@ class OutputDeliveryController {
         output.data[section] = analysis[section];
       }
     });
+
+    // Enhance with function-level data if available
+    if (projectId && level >= 'L2') {
+      try {
+        const ProgressiveEnhancer = require('../core/enhancement/ProgressiveEnhancer');
+        const { getDbV2 } = require('../database/db-manager-v2');
+        const dbV2 = getDbV2();
+        
+        if (dbV2) {
+          const enhancer = new ProgressiveEnhancer(this.logger, dbV2.db);
+          const enhanced = await enhancer.enhanceProgressiveOutput(output, level, projectId);
+          Object.assign(output, enhanced);
+        }
+      } catch (error) {
+        this.logger.warn('Failed to enhance Progressive Output', { error: error.message });
+      }
+    }
 
     // Format as document
     output.document = this.formatDocument(output.data, level);

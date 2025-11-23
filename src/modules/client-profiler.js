@@ -5,6 +5,9 @@
  * Philosophy: Understand WHO the client is, not just WHAT they want
  */
 
+const { handleError, wrapError, ErrorTypes } = require('../core/errors/ErrorHandler');
+const { validateRequired, validateObject } = require('../utils/validators');
+
 class ClientProfiler {
   constructor(logger) {
     this.logger = logger;

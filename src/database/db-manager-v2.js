@@ -47,15 +47,15 @@ class DatabaseManagerV2 {
       
       this.initialized = true;
       
-      console.log('✅ Database V2 initialized at:', this.dbPath);
+      console.log('[OK] Database V2 initialized at:', this.dbPath);
       
       // Verify connection
       const testQuery = this.db.prepare('SELECT 1 as test').get();
       if (testQuery && testQuery.test === 1) {
-        console.log('✅ Database connection verified');
+        console.log('[OK] Database connection verified');
       }
     } catch (error) {
-      console.error('❌ Database initialization failed:', error);
+      console.error('[ERROR] Database initialization failed:', error);
       throw error;
     }
   }
@@ -67,7 +67,7 @@ class DatabaseManagerV2 {
     const schemaPath = path.join(__dirname, 'schema-v2.sql');
     
     if (!fs.existsSync(schemaPath)) {
-      console.log('⚠️ Schema file not found, skipping schema initialization');
+      console.log('[WARN] Schema file not found, skipping schema initialization');
       return;
     }
     
@@ -133,7 +133,7 @@ class DatabaseManagerV2 {
       
       const tableNames = tablesCheck.map(t => t.name);
       if (tableNames.length < 3) {
-        console.log('⚠️ Tables not fully created, skipping statement preparation');
+        console.log('[WARN] Tables not fully created, skipping statement preparation');
         this.statements = {};
         return;
       }

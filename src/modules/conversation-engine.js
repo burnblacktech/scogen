@@ -5,6 +5,9 @@
  * Two-phase model: Requirement gathering → Generation (only when confirmed)
  */
 
+const { handleError, wrapError, ErrorTypes } = require('../core/errors/ErrorHandler');
+const { validateRequired, validateObject, validateArray } = require('../utils/validators');
+
 class ConversationEngine {
   constructor(logger, questionBank, requirementExtractor) {
     this.logger = logger || console;

@@ -17,6 +17,8 @@ const fs = require('fs');
 const crypto = require('crypto');
 const { getComplexityDays } = require('../utils/module-utils');
 const Formatters = require('../utils/formatters');
+const { handleError, wrapError, ErrorTypes } = require('../core/errors/ErrorHandler');
+const { validateRequired, validateObject, validateArray, validateNumber } = require('../utils/validators');
 
 // Get engine version from package.json
 const packageJson = require('../../package.json');
@@ -132,15 +134,24 @@ class LevelGenerator {
    * @param {Object} lockedScope - Locked scope object
    * @param {Array} previousLevels - Previously generated levels
    * @param {Object} chainResult - Complete chain execution result
+   * @param {string} projectId - Project ID for enhancement
    * @returns {Object} Generated level data
    */
-  async generateLevel(level, lockedScope, previousLevels = [], chainResult = {}) {
-    const startTime = Date.now();
-    this.logger.info(`Generating Level ${level}`, { 
-      moduleCount: lockedScope.modules.length 
-    });
+  async generateLevel(level, lockedScope, previousLevels = [], chainResult = {}, projectId = null) {
+    try {
+      // Validate required parameters
+      validateRequired(level, 'level');
+      validateNumber(level, 'level', { min: 1, max: 5, allowFloat: false });
+      validateRequired(lockedScope, 'lockedScope');
+      validateObject(lockedScope, 'lockedScope', ['modules']);
+      validateArray(lockedScope.modules, 'lockedScope.modules', true);
+      
+      const startTime = Date.now();
+      this.logger.info(`Generating Level ${level}`, { 
+        moduleCount: lockedScope.modules.length 
+      });
 
-    let levelData;
+      let levelData;
     
     switch(level) {
       case 1:
@@ -160,6 +171,25 @@ class LevelGenerator {
         break;
       default:
         throw new Error(`Invalid level: ${level}. Must be 1-5.`);
+    }
+    
+    // Enhance with function-level data if available
+    if (projectId && level >= 2) {
+      try {
+        const ProgressiveEnhancer = require('../core/enhancement/ProgressiveEnhancer');
+        const { getDbV2 } = require('../database/db-manager-v2');
+        const dbV2 = getDbV2();
+        
+        if (dbV2) {
+          const enhancer = new ProgressiveEnhancer(this.logger, dbV2.db);
+          levelData = await enhancer.enhanceProgressiveDocumentation(levelData, level, projectId);
+        }
+      } catch (error) {
+        this.logger.warn('Failed to enhance Progressive Documentation', { 
+          level, 
+          error: error.message 
+        });
+      }
     }
     
     // Add stable anchor IDs and module tags

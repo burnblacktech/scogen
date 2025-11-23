@@ -5,6 +5,9 @@
  * Philosophy: Show what consultants know but clients don't always see
  */
 
+const { handleError, wrapError, ErrorTypes } = require('../core/errors/ErrorHandler');
+const { validateRequired, validateObject, validateArray } = require('../utils/validators');
+
 class HiddenCostCalculator {
   constructor(logger) {
     this.logger = logger;

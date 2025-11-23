@@ -1,4 +1,6 @@
 const express = require('express');
+const http = require('http');
+const socketIO = require('socket.io');
 const cors = require('cors');
 const path = require('path');
 const { initializeSystem } = require('../index');
@@ -9,7 +11,9 @@ const middleware = require('./middleware');
 class APIServer {
   constructor() {
     this.app = express();
-    this.server = null;
+    this.httpServer = null;
+    this.server = null; // Keep for compatibility
+    this.io = null;
     this.executor = null;
     this.config = null;
     this.logger = null;
@@ -67,6 +71,22 @@ class APIServer {
     this.app.use(express.json());
     this.app.use(express.urlencoded({ extended: true }));
 
+    // Handle JSON parsing errors (must come after body-parser)
+    this.app.use((error, req, res, next) => {
+      if (error instanceof SyntaxError && error.status === 400 && 'body' in error) {
+        return res.status(400).json({
+          success: false,
+          error: 'Invalid JSON in request body',
+          code: 'INVALID_JSON',
+          details: {
+            message: error.message,
+            type: 'SyntaxError'
+          }
+        });
+      }
+      next(error);
+    });
+
     // Request logging middleware
     this.app.use(middleware.requestLogger(this.logger));
     
@@ -92,17 +112,88 @@ class APIServer {
       this.logger.info('Memory monitoring enabled');
     }
 
-    // API routes
-    this.app.use('/api', routes(this.executor, this.db, this.logger));
+    // Initialize cleanup service
+    try {
+      const CleanupService = require('../services/CleanupService');
+      this.cleanupService = new CleanupService(this.logger, this.db, {
+        generatedDir: path.join(process.cwd(), 'generated'),
+        retentionHours: parseInt(process.env.PDF_RETENTION_HOURS || '24', 10),
+        cleanupIntervalHours: parseInt(process.env.PDF_CLEANUP_INTERVAL_HOURS || '1', 10)
+      });
+      this.logger.info('PDF cleanup service initialized', {
+        retentionHours: this.cleanupService.retentionHours,
+        cleanupIntervalHours: this.cleanupService.cleanupIntervalHours
+      });
+    } catch (error) {
+      this.logger.warn('Failed to initialize cleanup service (non-blocking)', {
+        error: error.message
+      });
+      // Non-fatal: continue without cleanup service
+      this.cleanupService = null;
+    }
+
+    // Create HTTP server from Express app
+    this.httpServer = http.createServer(this.app);
+
+    // Initialize Socket.IO
+    this.io = socketIO(this.httpServer, {
+      cors: {
+        origin: allowedOrigins.length > 0 ? allowedOrigins : '*',
+        methods: ['GET', 'POST'],
+        credentials: true
+      }
+    });
+
+    // Set up Socket.IO connection handlers
+    this.setupSocketIO();
+
+    // API routes (pass io instance and cleanupService)
+    this.app.use('/api', routes(this.executor, this.db, this.logger, this.io, this.cleanupService));
+
+    // Redirects must come BEFORE static file serving
+    // Otherwise index.html gets served automatically
+
+    // Redirect root to new unified flow
+    this.app.get('/', (req, res) => {
+      res.redirect('/simple.html');
+    });
+
+    // Redirect old index.html to new unified flow
+    this.app.get('/index.html', (req, res) => {
+      res.redirect('/simple.html');
+    });
+
+    // Legacy dashboard access (for backward compatibility)
+    this.app.get('/legacy-dashboard', (req, res) => {
+      res.redirect('/dashboard.html');
+    });
 
     // Serve static files from web directory
     const webPath = path.join(__dirname, '../../web');
     this.app.use(express.static(webPath));
 
-    // Serve index.html for all non-API routes (SPA routing)
-    this.app.get('*', (req, res) => {
+    // Serve generated PDFs
+    const generatedPath = path.join(__dirname, '../../generated');
+    this.app.use('/downloads', express.static(generatedPath));
+
+    // Serve specific HTML files for non-API routes
+    this.app.get('*', (req, res, next) => {
       if (!req.path.startsWith('/api')) {
-        res.sendFile(path.join(webPath, 'index.html'));
+        // If it's a specific HTML file, serve it
+        if (req.path.endsWith('.html')) {
+          const filePath = path.join(webPath, req.path);
+          res.sendFile(filePath, (err) => {
+            if (err) {
+              // If file doesn't exist, redirect to dashboard
+              res.redirect('/dashboard.html');
+            }
+          });
+        } else {
+          // Otherwise, redirect to dashboard
+          res.redirect('/dashboard.html');
+        }
+      } else {
+        next();
       }
     });
 
@@ -110,6 +201,39 @@ class APIServer {
     this.app.use(middleware.errorHandler(this.logger));
 
     this.logger.info('API server initialized');
+  }
+
+  /**
+   * Set up Socket.IO connection handlers
+   */
+  setupSocketIO() {
+    this.io.on('connection', (socket) => {
+      this.logger.info('Socket.IO client connected', { socketId: socket.id });
+
+      // Subscribe to job updates
+      socket.on('subscribe', (jobId) => {
+        if (!jobId || typeof jobId !== 'string') {
+          socket.emit('error', { message: 'Invalid jobId' });
+          return;
+        }
+
+        socket.join(jobId);
+        this.logger.info('Client subscribed to job', { socketId: socket.id, jobId });
+
+        // Send current status if job exists (will be handled by GenerationQueue)
+        socket.emit('subscribed', { jobId });
+      });
+
+      socket.on('disconnect', () => {
+        this.logger.info('Socket.IO client disconnected', { socketId: socket.id });
+      });
+
+      socket.on('error', (error) => {
+        this.logger.error('Socket.IO error', { socketId: socket.id, error: error.message });
+      });
+    });
+
+    this.logger.info('Socket.IO initialized');
   }
 
   /**
@@ -145,9 +269,18 @@ class APIServer {
     const port = this.config.get('web.port') || process.env.WEB_PORT || 3000;
 
     return new Promise((resolve) => {
-      this.server = this.app.listen(port, () => {
+      this.httpServer.listen(port, () => {
+        this.server = this.httpServer; // Keep for compatibility
         this.logger.info(`Web server started on port ${port}`);
-        console.log(`\n🚀 Scogen Web UI running at http://localhost:${port}\n`);
+        this.logger.info('Socket.IO ready for connections');
+        
+        // Start cleanup service
+        if (this.cleanupService) {
+          this.cleanupService.scheduleCleanup();
+          this.logger.info('PDF cleanup service started');
+        }
+        
+        console.log(`\n[START] Scogen Web UI running at http://localhost:${port}\n`);
         resolve();
       });
     });
@@ -156,11 +289,22 @@ class APIServer {
   async stop() {
     const cleanupPromises = [];
     
+    // Close Socket.IO
+    if (this.io) {
+      try {
+        this.io.close();
+        this.logger.info('Socket.IO closed');
+      } catch (error) {
+        this.logger.warn('Error closing Socket.IO', { error: error.message });
+      }
+    }
+
     // Close HTTP server
-    if (this.server) {
+    if (this.httpServer || this.server) {
+      const serverToClose = this.httpServer || this.server;
       cleanupPromises.push(
         new Promise((resolve) => {
-          this.server.close(() => {
+          serverToClose.close(() => {
             this.logger.info('Web server stopped');
             resolve();
           });
@@ -197,6 +341,16 @@ class APIServer {
         this.logger.warn('Error stopping memory monitor', { error: error.message });
       }
     }
+
+    // Stop cleanup service
+    if (this.cleanupService) {
+      try {
+        this.cleanupService.stop();
+        this.logger.info('PDF cleanup service stopped');
+      } catch (error) {
+        this.logger.warn('Error stopping cleanup service', { error: error.message });
+      }
+    }
     
     // Wait for all cleanup to complete
     await Promise.all(cleanupPromises);
@@ -205,6 +359,14 @@ class APIServer {
 
   getExecutor() {
     return this.executor;
+  }
+
+  /**
+   * Get Socket.IO instance
+   * @returns {Object} Socket.IO instance
+   */
+  getIO() {
+    return this.io;
   }
 }
 

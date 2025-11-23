@@ -1,8 +1,12 @@
 // src/modules/technical-decomposer.js
 // Technical Decomposition with Resource-Based Costing
 
+const DynamicCostCalculator = require('../core/estimation/DynamicCostCalculator');
+
 class TechnicalDecomposer {
   constructor() {
+    // Initialize dynamic cost calculator
+    this.dynamicCostCalculator = new DynamicCostCalculator();
     // Resource types and their deliverables with costs
     this.resourceTypes = {
       backend_developer: {
@@ -342,7 +346,7 @@ class TechnicalDecomposer {
 
   // Main decomposition method
   async decompose(enrichedRequirements, context = {}) {
-    console.log('🔧 Starting Technical Decomposition...');
+    console.log('[INFO] Starting Technical Decomposition...');
 
     const decomposition = {
       modules: [],
@@ -361,17 +365,36 @@ class TechnicalDecomposer {
     // Process each requirement/module
     const modules = this.extractModules(enrichedRequirements);
 
+    // Use dynamic costing for each module
     for (const module of modules) {
+      // Calculate dynamic cost for this module
+      const dynamicCost = this.dynamicCostCalculator.calculateModuleCost(module, context);
+      
+      // Also do pattern-based decomposition for deliverables tracking
       const moduleDecomposition = this.decomposeModule(module, context);
+      
+      // Merge dynamic cost into module decomposition
+      moduleDecomposition.dynamicCost = dynamicCost;
+      moduleDecomposition.totalCost = dynamicCost.cost.total; // Use dynamic cost
+      moduleDecomposition.complexity = dynamicCost.complexity;
+      moduleDecomposition.complexityBreakdown = dynamicCost.complexityBreakdown;
+      moduleDecomposition.costConfidence = dynamicCost.confidence;
+      
       decomposition.modules.push(moduleDecomposition);
       
-      // Aggregate deliverables by resource
+      // Aggregate deliverables by resource (for tracking)
       this.aggregateDeliverables(decomposition, moduleDecomposition);
+      
+      // Add dynamic cost breakdown to resources
+      this.aggregateDynamicCosts(decomposition, dynamicCost);
     }
 
-    // Calculate costs
+    // Calculate costs (now using dynamic costs)
     decomposition.totalCost = this.calculateTotalCost(decomposition);
     decomposition.costByResource = this.calculateCostByResource(decomposition);
+    
+    // Add dynamic cost summary
+    decomposition.dynamicCostSummary = this.generateDynamicCostSummary(decomposition.modules);
 
     // Calculate timeline
     decomposition.timeline = this.calculateTimeline(decomposition, context);
@@ -382,7 +405,7 @@ class TechnicalDecomposer {
     // Add recommendations
     decomposition.recommendations = this.generateRecommendations(decomposition, context);
 
-    console.log(`✅ Decomposition Complete: ${decomposition.stats.totalDeliverables} deliverables identified`);
+    console.log(`[OK] Decomposition Complete: ${decomposition.stats.totalDeliverables} deliverables identified`);
 
     return decomposition;
   }
@@ -673,9 +696,99 @@ class TechnicalDecomposer {
     return titles[resourceKey] || resourceKey;
   }
 
-  // Calculate total cost
+  // Calculate total cost (now uses dynamic costs from modules)
   calculateTotalCost(decomposition) {
-    return decomposition.deliverables.reduce((sum, d) => sum + d.cost, 0);
+    // Sum dynamic costs from modules (more accurate)
+    const dynamicTotal = decomposition.modules.reduce((sum, m) => {
+      return sum + (m.dynamicCost?.cost?.total || m.totalCost || 0);
+    }, 0);
+    
+    // Fallback to deliverables sum if dynamic costs not available
+    const deliverablesTotal = decomposition.deliverables.reduce((sum, d) => sum + d.cost, 0);
+    
+    // Use dynamic total if available, otherwise fallback
+    return dynamicTotal > 0 ? dynamicTotal : deliverablesTotal;
+  }
+  
+  // Aggregate dynamic costs into decomposition resources
+  aggregateDynamicCosts(decomposition, dynamicCost) {
+    if (!dynamicCost || !dynamicCost.cost || !dynamicCost.cost.breakdown) {
+      return;
+    }
+    
+    const breakdown = dynamicCost.cost.breakdown;
+    
+    Object.keys(breakdown).forEach(resource => {
+      const resourceKey = this.mapResourceKey(resource);
+      const costData = breakdown[resource];
+      
+      if (!decomposition.resources[resourceKey]) {
+        decomposition.resources[resourceKey] = {
+          title: this.getResourceTitle(resourceKey),
+          deliverables: [],
+          totalCost: 0
+        };
+      }
+      
+      // Add dynamic cost to resource total
+      decomposition.resources[resourceKey].totalCost += costData.cost || 0;
+    });
+  }
+  
+  // Map dynamic cost resource names to decomposition resource keys
+  mapResourceKey(resource) {
+    const mapping = {
+      'backend': 'backend',
+      'frontend': 'frontend',
+      'mobile': 'mobile',
+      'ui': 'ui',
+      'qa': 'qa',
+      'devops': 'devops',
+      'pm': 'pm'
+    };
+    
+    return mapping[resource] || resource;
+  }
+  
+  // Generate dynamic cost summary
+  generateDynamicCostSummary(modules) {
+    const summary = {
+      totalModules: modules.length,
+      totalCost: modules.reduce((sum, m) => sum + (m.dynamicCost?.cost?.total || m.totalCost || 0), 0),
+      averageComplexity: 0,
+      complexityDistribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
+      averageConfidence: 0,
+      costByComplexity: {}
+    };
+    
+    let totalComplexity = 0;
+    let totalConfidence = 0;
+    let modulesWithComplexity = 0;
+    
+    modules.forEach(module => {
+      const complexity = module.dynamicCost?.complexity || module.complexity || 3;
+      const confidence = module.dynamicCost?.confidence || module.costConfidence || 0.8;
+      const cost = module.dynamicCost?.cost?.total || module.totalCost || 0;
+      
+      totalComplexity += complexity;
+      totalConfidence += confidence;
+      modulesWithComplexity++;
+      
+      const complexityLevel = Math.ceil(complexity);
+      summary.complexityDistribution[complexityLevel] = (summary.complexityDistribution[complexityLevel] || 0) + 1;
+      
+      if (!summary.costByComplexity[complexityLevel]) {
+        summary.costByComplexity[complexityLevel] = 0;
+      }
+      summary.costByComplexity[complexityLevel] += cost;
+    });
+    
+    if (modulesWithComplexity > 0) {
+      summary.averageComplexity = totalComplexity / modulesWithComplexity;
+      summary.averageConfidence = totalConfidence / modulesWithComplexity;
+    }
+    
+    return summary;
   }
 
   // Calculate cost by resource

@@ -1,6 +1,9 @@
 // src/modules/proposal-adjuster.js
 // Proposal Adjuster - Handles commercial proposal adjustments while maintaining technical truth
 
+const { handleError, wrapError, ErrorTypes } = require('../core/errors/ErrorHandler');
+const { validateRequired, validateObject, validateArray } = require('../utils/validators');
+
 class ProposalAdjuster {
   constructor(technicalBaseline) {
     this.technicalBaseline = technicalBaseline;

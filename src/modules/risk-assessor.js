@@ -248,7 +248,7 @@ class RiskAssessor {
 
   // Main risk assessment method
   async assessRisks(decomposition, enrichedRequirements, clientProfile, context = {}) {
-    console.log('⚠️ Starting Risk Assessment...');
+    console.log('[INFO] Starting Risk Assessment...');
     
     const assessment = {
       identifiedRisks: [],
@@ -308,7 +308,7 @@ class RiskAssessor {
     // Step 12: Create risk register
     assessment.riskRegister = this.createRiskRegister(assessment.identifiedRisks);
 
-    console.log(`✅ Risk Assessment Complete: ${assessment.identifiedRisks.length} risks identified`);
+    console.log(`[OK] Risk Assessment Complete: ${assessment.identifiedRisks.length} risks identified`);
     console.log(`   Risk Level: ${assessment.level}`);
     console.log(`   Recommended Buffer: ${((assessment.recommendedBuffers.cost - 1) * 100).toFixed(0)}%`);
     

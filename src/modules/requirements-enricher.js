@@ -6,6 +6,9 @@
  * Enhanced: Comprehensive pattern-based enrichment with AI capability
  */
 
+const { handleError, wrapError, ErrorTypes } = require('../core/errors/ErrorHandler');
+const { validateRequired, validateObject, validateArray } = require('../utils/validators');
+
 class RequirementsEnricher {
   constructor(logger) {
     this.logger = logger;
@@ -30,7 +33,7 @@ class RequirementsEnricher {
    * @returns {Object} Comprehensive enrichment result
    */
   async enrich(extractedRequirements, context = {}) {
-    console.log('🔧 Starting Requirements Enrichment...');
+    console.log('[INFO] Starting Requirements Enrichment...');
     
     const enrichmentResult = {
       original: extractedRequirements,
@@ -100,7 +103,7 @@ class RequirementsEnricher {
     enrichmentResult.recommendations = this.generateRecommendations(enrichmentResult, context);
     enrichmentResult.warnings = this.generateWarnings(enrichmentResult, context);
 
-    console.log(`✅ Enrichment Complete: ${enrichmentResult.stats.originalCount} → ${enrichmentResult.stats.enrichedCount} requirements`);
+    console.log(`[OK] Enrichment Complete: ${enrichmentResult.stats.originalCount} -> ${enrichmentResult.stats.enrichedCount} requirements`);
     console.log(`   Pattern Coverage: ${enrichmentResult.stats.confidence}%`);
     console.log(`   AI Enhanced: ${enrichmentResult.stats.aiEnhanced}`);
     console.log(`   Cost: ₹${enrichmentResult.stats.cost}`);

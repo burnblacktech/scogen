@@ -42,7 +42,7 @@ class PatternLibrary {
       await this.loadStatistics();
       
       this.initialized = true;
-      console.log('✅ Pattern library initialized');
+      console.log('[OK] Pattern library initialized');
     } catch (error) {
       console.error('Error initializing pattern library:', error);
     }

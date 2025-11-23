@@ -8,13 +8,16 @@ const { v4: uuidv4 } = require('uuid');
  * 
  * @class Refiner
  */
+const { handleError, wrapError, ErrorTypes } = require('../core/errors/ErrorHandler');
+const { validateRequired, validateObject, validateArray } = require('../utils/validators');
+
 class Refiner {
   /**
    * Create a Refiner instance
    * @param {Object} library - Library instance
    * @param {Object} logger - Logger instance
    */
-  constructor(library, logger) {
+constructor(library, logger) {
     this.library = library;
     this.logger = logger;
   }
@@ -34,8 +37,17 @@ class Refiner {
    * @returns {Object} Refined scope with modules, edges, and feasibility
    */
   refine(parsedScope, psychProfile, budgetTier, domainContext, options = {}) {
-    let modules = [...parsedScope.modules];
-    let edges = [...parsedScope.edges];
+    try {
+      // Validate required parameters
+      validateRequired(parsedScope, 'parsedScope');
+      validateObject(parsedScope, 'parsedScope', ['modules']);
+      validateArray(parsedScope.modules, 'parsedScope.modules', true);
+      validateRequired(psychProfile, 'psychProfile');
+      validateRequired(budgetTier, 'budgetTier');
+      validateRequired(domainContext, 'domainContext');
+      
+      let modules = [...parsedScope.modules];
+      let edges = [...(parsedScope.edges || [])];
 
     // Step 1: Prioritize modules
     modules = this.assignPriority(modules, parsedScope.intent, domainContext);
@@ -85,19 +97,28 @@ class Refiner {
       modules = this.forceMinimumScope(parsedScope.modules);
     }
 
-    this.logger.info('Refinement complete', {
-      modulesCount: modules.length,
-      activeModules: modules.filter(m => m.priority !== 'deferred').length,
-      feasibility: feasibility.score
-    });
+      this.logger.info('Refinement complete', {
+        modulesCount: modules.length,
+        activeModules: modules.filter(m => m.priority !== 'deferred').length,
+        feasibility: feasibility.score
+      });
 
-    return {
-      refinedScope: {
-        modules,
-        edges,
-        feasibility
-      }
-    };
+      return {
+        refinedScope: {
+          modules,
+          edges,
+          feasibility
+        }
+      };
+    } catch (error) {
+      const standardized = handleError(error, this.logger, {
+        operation: 'refine',
+        parsedScope: parsedScope ? { moduleCount: parsedScope.modules?.length } : null,
+        budgetTier,
+        domainContext: domainContext ? { industry: domainContext.industry } : null
+      });
+      throw standardized;
+    }
   }
 
   assignPriority(modules, intent, domainContext) {

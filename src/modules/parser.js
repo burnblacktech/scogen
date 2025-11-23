@@ -1,5 +1,8 @@
 const { v4: uuidv4 } = require('uuid');
 
+const { handleError, wrapError, ErrorTypes } = require('../core/errors/ErrorHandler');
+const { validateRequired, validateObject, validateArray } = require('../utils/validators');
+
 /**
  * Parser Module
  * 
@@ -31,25 +34,27 @@ class Parser {
    * @returns {Object} Parsed scope with modules, edges, and intent
    */
   parse(extractedIntent, domainContext) {
-    const modules = [];
-    const edges = [];
-
-    // Validate input with defensive defaults
-    if (!extractedIntent) {
-      this.logger.warn('Parser received undefined extractedIntent, using defaults');
-      extractedIntent = { modules: [], industry: 'generic', useCase: 'application' };
-    }
-    
-    // Ensure modules is an array
-    if (!Array.isArray(extractedIntent.modules)) {
-      this.logger.warn('Parser received non-array modules, converting to array');
-      extractedIntent.modules = [];
-    }
+    try {
+      // Validate input with defensive defaults
+      if (!extractedIntent) {
+        this.logger.warn('Parser received undefined extractedIntent, using defaults');
+        extractedIntent = { modules: [], industry: 'generic', useCase: 'application' };
+      }
+      
+      // Validate domainContext if provided
+      if (domainContext) {
+        validateObject(domainContext, 'domainContext', []);
+      }
+      
+      // Ensure modules is an array (use centralized utility)
+      const { ensureArray } = require('../utils/array-utils');
+      extractedIntent.modules = ensureArray(extractedIntent.modules, []);
+      
+      const modules = [];
+      const edges = [];
 
     // Step 1: Normalize user-mentioned modules
-    const modulesToNormalize = Array.isArray(extractedIntent.modules) 
-      ? extractedIntent.modules 
-      : [];
+    const modulesToNormalize = extractedIntent.modules;
     const normalized = this.normalizeModules(modulesToNormalize);
 
     // Step 2: Map to technical modules
@@ -76,21 +81,29 @@ class Parser {
       edges.push(...domainContext.hiddenEdges);
     }
 
-    this.logger.info('Parsing complete', {
-      modulesDetected: withDeps.length,
-      edgesDetected: edges.length
-    });
+      this.logger.info('Parsing complete', {
+        modulesDetected: withDeps.length,
+        edgesDetected: edges.length
+      });
 
-    return {
-      modules: withDeps,
-      edges: edges,
-      intent: {
-        b2b: this.detectB2B(extractedIntent),
-        b2c: this.detectB2C(extractedIntent),
-        industry: extractedIntent.industry || 'generic',
-        useCase: extractedIntent.useCase || 'application'
-      }
-    };
+      return {
+        modules: withDeps,
+        edges: edges,
+        intent: {
+          b2b: this.detectB2B(extractedIntent),
+          b2c: this.detectB2C(extractedIntent),
+          industry: extractedIntent.industry || 'generic',
+          useCase: extractedIntent.useCase || 'application'
+        }
+      };
+    } catch (error) {
+      const standardized = handleError(error, this.logger, {
+        operation: 'parse',
+        extractedIntent: extractedIntent ? { moduleCount: extractedIntent.modules?.length } : null,
+        domainContext: domainContext ? { industry: domainContext.industry } : null
+      });
+      throw standardized;
+    }
   }
 
   normalizeModules(rawModules) {
@@ -189,14 +202,10 @@ class Parser {
   }
 
   extractEdges(userEdges) {
-    // Ensure userEdges is an array
-    if (!Array.isArray(userEdges)) {
-      this.logger.warn('extractEdges received non-array input', { 
-        type: typeof userEdges,
-        value: userEdges 
-      });
-      return [];
-    }
+    // Use centralized array validation
+    const { ensureArray } = require('../utils/array-utils');
+    const edges = ensureArray(userEdges, []);
+    if (edges.length === 0) return [];
     
     const edgeMap = {
       'daily': { desc: 'Daily tracking = more data volume', score: 5 },
@@ -205,7 +214,7 @@ class Parser {
       'mobile': { desc: 'Mobile app = separate build', score: 6 }
     };
 
-    return userEdges.map(edge => {
+    return edges.map(edge => {
       const edgeStr = typeof edge === 'string' ? edge : (edge.desc || edge.description || String(edge));
       const normalized = edgeStr.toLowerCase();
       for (let [key, value] of Object.entries(edgeMap)) {

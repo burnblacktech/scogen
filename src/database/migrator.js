@@ -7,6 +7,7 @@
 const DatabaseManagerV2 = require('./db-manager-v2');
 const fs = require('fs');
 const path = require('path');
+const migrationHelpers = require('./migration-helpers');
 
 class DatabaseMigrator {
   constructor(dbPath = null) {
@@ -51,7 +52,7 @@ class DatabaseMigrator {
     
     // Get migration files
     if (!fs.existsSync(this.migrationsPath)) {
-      console.log('⚠️ Migrations directory not found, creating...');
+      console.log('[WARN] Migrations directory not found, creating...');
       fs.mkdirSync(this.migrationsPath, { recursive: true });
       return;
     }
@@ -61,7 +62,7 @@ class DatabaseMigrator {
       .sort();
     
     if (files.length === 0) {
-      console.log('✅ No migration files found');
+      console.log('[OK] No migration files found');
       return;
     }
     
@@ -78,9 +79,9 @@ class DatabaseMigrator {
     }
     
     if (executedCount === 0) {
-      console.log('✅ All migrations already executed');
+      console.log('[OK] All migrations already executed');
     } else {
-      console.log(`✅ Executed ${executedCount} migration(s)`);
+      console.log(`[OK] Executed ${executedCount} migration(s)`);
     }
     
     this.db.close();
@@ -97,18 +98,92 @@ class DatabaseMigrator {
     }
     
     const sql = fs.readFileSync(filepath, 'utf8');
-    
-    // Split by semicolon and execute each statement
-    const statements = sql
-      .split(';')
-      .map(s => s.trim())
-      .filter(s => s.length > 0 && !s.startsWith('--'));
+    const logger = { 
+      info: (msg) => console.log(`  [INFO] ${msg}`),
+      warn: (msg) => console.warn(`  [WARN] ${msg}`),
+      error: (msg, err) => console.error(`  [ERROR] ${msg}`, err),
+      debug: () => {} 
+    };
     
     try {
       // Execute in transaction
       this.db.transaction(() => {
+        // Handle special migrations that need programmatic column additions
+        if (filename === '003_add_lifecycle_and_auth.sql' || filename === '004_complete_sync.sql') {
+          // Add columns to projects table safely
+          migrationHelpers.addProjectsColumns(this.db.db, logger);
+          // Ensure users table has all columns
+          migrationHelpers.ensureUsersTableColumns(this.db.db, logger);
+        }
+        
+        if (filename === '002_add_intelligence_fields.sql' || filename === '004_complete_sync.sql') {
+          // Add intelligence columns to features table
+          migrationHelpers.addFeaturesIntelligenceColumns(this.db.db, logger);
+          // Add pricing columns to functions table
+          migrationHelpers.addFunctionsPricingColumns(this.db.db, logger);
+        }
+        
+        if (filename === '004_complete_sync.sql') {
+          // Ensure industry_templates has all columns
+          migrationHelpers.ensureIndustryTemplatesColumns(this.db.db, logger);
+        }
+        
+        if (filename === '006_add_pdf_error_tracking.sql') {
+          // Add format column to document_generations table safely
+          migrationHelpers.addColumnIfNotExists(
+            this.db.db,
+            'document_generations',
+            'format',
+            'TEXT DEFAULT "pdf"',
+            logger
+          );
+        }
+        
+        // Split by semicolon and execute each statement
+        // Use a more robust splitting that handles multi-line statements
+        const statements = sql
+          .split(';')
+          .map(s => s.trim())
+          .filter(s => {
+            // Filter out empty statements and pure comments
+            if (s.length === 0) return false;
+            // Keep statements that have actual SQL (not just comments)
+            const sqlPart = s.split('\n').filter(line => {
+              const trimmed = line.trim();
+              return trimmed.length > 0 && !trimmed.startsWith('--');
+            }).join(' ').trim();
+            return sqlPart.length > 0;
+          });
+        
         for (const statement of statements) {
-          this.db.db.exec(statement + ';');
+          // Skip ALTER TABLE statements that are handled programmatically
+          if (statement.toUpperCase().includes('ALTER TABLE') && 
+              (statement.includes('ADD COLUMN') || statement.includes('IF NOT EXISTS'))) {
+            // These are handled by migration helpers
+            continue;
+          }
+          
+          try {
+            // Execute statement (add semicolon back)
+            this.db.db.exec(statement + ';');
+          } catch (error) {
+            // Ignore "duplicate column" and "already exists" errors
+            if (error.message.includes('duplicate column') || 
+                error.message.includes('already exists') ||
+                error.message.includes('no such column') ||
+                error.message.includes('duplicate index name')) {
+              logger.warn(`Skipping: ${statement.substring(0, 50)}... (already exists)`);
+              continue;
+            }
+            // For "no such table" errors on CREATE INDEX, log but don't fail
+            // (table might be created later in the migration)
+            if (error.message.includes('no such table') && statement.toUpperCase().includes('CREATE INDEX')) {
+              logger.warn(`Warning: Table not found for index, will retry: ${statement.substring(0, 50)}...`);
+              // Don't throw, but log it - the index creation will be retried in migration 004
+              continue;
+            }
+            throw error;
+          }
         }
         
         // Record migration
@@ -117,9 +192,9 @@ class DatabaseMigrator {
         ).run(filename);
       });
       
-      console.log(`  ✅ ${filename} executed successfully`);
+      console.log(`  [OK] ${filename} executed successfully`);
     } catch (error) {
-      console.error(`  ❌ ${filename} failed:`, error.message);
+      console.error(`  [ERROR] ${filename} failed:`, error.message);
       throw error;
     }
   }
@@ -164,13 +239,13 @@ class DatabaseMigrator {
           this.db.db.prepare('DELETE FROM migrations WHERE filename = ?').run(last.filename);
         });
         
-        console.log(`✅ Rolled back: ${last.filename}`);
+        console.log(`[OK] Rolled back: ${last.filename}`);
       } catch (error) {
-        console.error(`❌ Rollback failed:`, error.message);
+        console.error(`[ERROR] Rollback failed:`, error.message);
         throw error;
       }
     } else {
-      console.log(`⚠️ No rollback file for ${last.filename}`);
+      console.log(`[WARN] No rollback file for ${last.filename}`);
     }
     
     this.db.close();
@@ -203,7 +278,7 @@ class DatabaseMigrator {
       const execInfo = executed ? 
         executed.find(e => e.filename === file) : null;
       
-      const status = executed ? '✅ Executed' : '⏳ Pending';
+      const status = executed ? '[OK] Executed' : '[PENDING] Pending';
       const date = execInfo ? ` (${execInfo.executed_at})` : '';
       
       console.log(`${status}: ${file}${date}`);

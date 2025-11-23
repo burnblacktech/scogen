@@ -1,5 +1,24 @@
-// src/modules/chain-executor-step2.js
-// Chain Executor with Requirements Enrichment (Step 2)
+/**
+ * Chain Executor Step 2: Requirements Enrichment
+ * 
+ * Extends ChainExecutorEnhanced to add:
+ * - Requirements enrichment using pattern library
+ * - AI-enhanced enrichment (if enabled)
+ * - Domain-specific requirement discovery
+ * - Edge case identification
+ * - Compliance requirement detection
+ * 
+ * When to Use:
+ * - When you need enriched requirements beyond what user provided
+ * - For complex projects requiring domain expertise
+ * - When compliance and edge cases are important
+ * 
+ * Used By:
+ * - ChainExecutorStep3 as base class
+ * 
+ * @see {@link ../../docs/02-modules/chain-executor-variants.md} for variant comparison
+ * @extends ChainExecutorEnhanced
+ */
 
 const ChainExecutorEnhanced = require('./chain-executor-enhanced');
 const RequirementsEnricher = require('./requirements-enricher');
@@ -30,7 +49,7 @@ class ChainExecutorStep2 extends ChainExecutorEnhanced {
     }
 
     // Step 2: Requirements Enrichment
-    console.log('\n🔧 Step 2: Requirements Enrichment...');
+    console.log('\n[STEP 2] Requirements Enrichment...');
 
     // Initialize pattern library if not already done
     if (!this.patternLibrary) {
@@ -79,10 +98,10 @@ class ChainExecutorStep2 extends ChainExecutorEnhanced {
     };
 
     // Log summary
-    console.log(`   ✅ Enriched: ${enrichmentResult.stats.originalCount} → ${enrichmentResult.stats.enrichedCount} requirements`);
-    console.log(`   📊 Pattern Coverage: ${enrichmentResult.stats.confidence}%`);
+    console.log(`   [OK] Enriched: ${enrichmentResult.stats.originalCount} -> ${enrichmentResult.stats.enrichedCount} requirements`);
+    console.log(`   [INFO] Pattern Coverage: ${enrichmentResult.stats.confidence}%`);
     if (enrichmentResult.stats.aiEnhanced) {
-      console.log(`   🤖 AI Enhanced: ₹${enrichmentResult.stats.cost}`);
+      console.log(`   [AI] AI Enhanced: ₹${enrichmentResult.stats.cost}`);
     }
 
     return results;

@@ -1,4 +1,6 @@
 const { getComplexityDays } = require('../utils/module-utils');
+const { handleError, wrapError, ErrorTypes } = require('../core/errors/ErrorHandler');
+const { validateRequired, validateObject, validateArray } = require('../utils/validators');
 
 /**
  * Generator Module
@@ -126,7 +128,16 @@ class Generator {
    * @returns {Object} Plan object with overview, modules, steps, timeline, and risks
    */
   generate(refinedScope, budgetTier, psychProfile, domainContext) {
-    const { modules, edges, feasibility } = refinedScope;
+    try {
+      // Validate required parameters
+      validateRequired(refinedScope, 'refinedScope');
+      validateObject(refinedScope, 'refinedScope', ['modules']);
+      validateArray(refinedScope.modules, 'refinedScope.modules', true);
+      validateRequired(budgetTier, 'budgetTier');
+      validateRequired(psychProfile, 'psychProfile');
+      validateRequired(domainContext, 'domainContext');
+      
+      const { modules, edges, feasibility } = refinedScope;
 
     const overview = this.buildOverview(modules, edges, feasibility, domainContext);
     const moduleDetails = this.buildModuleDetails(modules, budgetTier, psychProfile, domainContext);
@@ -137,15 +148,24 @@ class Generator {
     // REMOVED: Hardcoded budget caps - timeline is calculated from scope
     // Budget constraints are handled in refiner as advisory warnings
 
-    return {
-      plan: {
-        overview,
-        modules: moduleDetails,
-        steps,
-        timeline,
-        risks
-      }
-    };
+      return {
+        plan: {
+          overview,
+          modules: moduleDetails,
+          steps,
+          timeline,
+          risks
+        }
+      };
+    } catch (error) {
+      const standardized = handleError(error, this.logger, {
+        operation: 'generate',
+        refinedScope: refinedScope ? { moduleCount: refinedScope.modules?.length } : null,
+        budgetTier,
+        domainContext: domainContext ? { industry: domainContext.industry } : null
+      });
+      throw standardized;
+    }
   }
 
   buildOverview(modules, edges, feasibility, domainContext) {
@@ -297,7 +317,7 @@ class Generator {
     const activeModules = modules.filter(m => m.priority !== 'deferred');
 
     let totalDays = activeModules.reduce((sum, mod) => {
-      const baseEffort = { low: 1, med: 2, high: 4 }[mod.complexity] || 2;
+      const baseEffort = getComplexityDays(mod.complexity);
       const reuse = this.library.getReusableModule(mod.name, 'generic');
       const effort = reuse.available ? Math.max(1, baseEffort * 0.5) : baseEffort;
       return sum + effort;

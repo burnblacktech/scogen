@@ -1,3 +1,24 @@
+/**
+ * Chain Executor (Base)
+ * 
+ * Core execution engine that runs the standard SCOGEN pipeline.
+ * 
+ * Features:
+ * - Input quality analysis
+ * - Conversation mode support
+ * - Checkpoint mode support
+ * - Full pipeline execution (Parser → Refiner → Generator → Estimator → Auditor)
+ * - Progressive output generation
+ * - Output translation
+ * 
+ * When to Use:
+ * - CLI execution
+ * - Standard API requests (non-enhanced)
+ * - Basic scoping without advanced features
+ * 
+ * @see {@link ../../docs/02-modules/chain-executor-variants.md} for variant comparison
+ */
+// Core pipeline modules (can use either location for now)
 const Parser = require('./parser');
 const PsychologicalProfiler = require('./psychological-profiler');
 const PromptManager = require('../utils/prompt-manager');

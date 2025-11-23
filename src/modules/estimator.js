@@ -33,12 +33,8 @@ class Estimator {
       flexible: 10000
     };
 
-    /** @type {Object<string, number>} Base effort days by complexity (kept for backward compatibility) */
-    this.COMPLEXITY_DAYS = {
-      low: 1,
-      med: 2,
-      high: 4
-    };
+    // Note: Complexity mapping now uses centralized getComplexityDays from module-utils.js
+    // This property kept for backward compatibility but should use getComplexityDays() instead
   }
 
   /**

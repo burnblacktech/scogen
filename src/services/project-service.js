@@ -19,9 +19,9 @@ class ProjectService {
       try {
         this.dbV2 = new DatabaseManagerV2();
         this.dbV2.initialize();
-        console.log('✅ New database enabled');
+        console.log('[OK] New database enabled');
       } catch (error) {
-        console.error('⚠️ Failed to initialize new database:', error.message);
+        console.error('[WARN] Failed to initialize new database:', error.message);
         this.useNewDb = false; // Fallback to old database
       }
     }

@@ -93,35 +93,35 @@ class ScenarioGeneratorV2 {
 
   // Generate scenarios based on complete context
   async generateScenarios(decomposition, riskAssessment, enrichedRequirements, clientProfile, options = {}) {
-    console.log('🎯 Generating Intelligent Scenarios...');
+    console.log('[INFO] Generating Intelligent Scenarios...');
     const startTime = Date.now();
     const MAX_TOTAL_TIME = 30000; // 30 seconds total timeout
     
     try {
-      console.log('   → Validating inputs...');
+      console.log('   [INFO] Validating inputs...');
       // Validate inputs
       if (!decomposition || !riskAssessment) {
         throw new Error('Missing required inputs: decomposition or riskAssessment');
       }
-      console.log('   → Inputs validated');
+      console.log('   [OK] Inputs validated');
 
       const scenarios = [];
-      console.log('   → Creating baseline estimate...');
+      console.log('   [INFO] Creating baseline estimate...');
       const baselineEstimate = this.createBaselineEstimate(decomposition, riskAssessment);
-      console.log('   → Baseline estimate created');
+      console.log('   [OK] Baseline estimate created');
 
       // Determine which scenarios are suitable
-      console.log('   → Determining suitable scenarios...');
+      console.log('   [INFO] Determining suitable scenarios...');
       const suitableScenarios = this.determineSuitableScenarios(
         clientProfile || {},
         options,
         baselineEstimate
       );
-      console.log(`   → Generating ${suitableScenarios.length} scenario(s): ${suitableScenarios.join(', ')}`);
+      console.log(`   [INFO] Generating ${suitableScenarios.length} scenario(s): ${suitableScenarios.join(', ')}`);
 
       // Check timeout before starting loop
       if (Date.now() - startTime > MAX_TOTAL_TIME) {
-        console.log('   ⚠️ Timeout before scenario generation - returning baseline only');
+        console.log('   [WARN] Timeout before scenario generation - returning baseline only');
         return {
           baseline: baselineEstimate,
           scenarios: [],
@@ -170,12 +170,12 @@ class ScenarioGeneratorV2 {
           
           if (scenario) {
             scenarios.push(scenario);
-            console.log(`   ✅ ${scenarioType} scenario generated`);
+            console.log(`   [OK] ${scenarioType} scenario generated`);
           } else {
-            console.log(`   ⚠️ ${scenarioType} scenario returned null (skipped)`);
+            console.log(`   [WARN] ${scenarioType} scenario returned null (skipped)`);
           }
         } catch (scenarioError) {
-          console.error(`   ❌ Failed to generate ${scenarioType} scenario:`, scenarioError.message);
+          console.error(`   [ERROR] Failed to generate ${scenarioType} scenario:`, scenarioError.message);
           if (scenarioError.stack) {
             console.error(scenarioError.stack);
           }
@@ -185,7 +185,7 @@ class ScenarioGeneratorV2 {
       }
 
       if (scenarios.length === 0) {
-        console.log('   ⚠️ No scenarios were generated successfully');
+        console.log('   [WARN] No scenarios were generated successfully');
         // Return at least baseline
         return {
           baseline: baselineEstimate,
@@ -201,7 +201,7 @@ class ScenarioGeneratorV2 {
       try {
         rankedScenarios = this.rankScenarios(scenarios, options);
       } catch (rankError) {
-        console.error('   ⚠️ Ranking failed, using original order:', rankError.message);
+        console.error('   [WARN] Ranking failed, using original order:', rankError.message);
         rankedScenarios = scenarios;
       }
 
@@ -212,18 +212,18 @@ class ScenarioGeneratorV2 {
       try {
         finalScenarios = this.addRecommendations(rankedScenarios, clientProfile || {}, options);
       } catch (recError) {
-        console.error('   ⚠️ Recommendation generation failed, using ranked scenarios:', recError.message);
+        console.error('   [WARN] Recommendation generation failed, using ranked scenarios:', recError.message);
         finalScenarios = rankedScenarios;
       }
 
-      console.log(`✅ Generated ${finalScenarios.length} scenarios`);
+      console.log(`[OK] Generated ${finalScenarios.length} scenarios`);
 
       // Generate recommendation safely
       let recommendation;
       try {
         recommendation = this.generateRecommendation(finalScenarios, clientProfile || {}, options);
       } catch (recError) {
-        console.error('   ⚠️ Recommendation generation failed:', recError.message);
+        console.error('   [WARN] Recommendation generation failed:', recError.message);
         recommendation = { 
           primary: finalScenarios[0]?.type || 'baseline', 
           reasoning: 'Unable to generate detailed recommendation' 
@@ -236,7 +236,7 @@ class ScenarioGeneratorV2 {
         recommendation: recommendation
       };
     } catch (error) {
-      console.error('❌ Scenario generation failed:', error.message);
+      console.error('[ERROR] Scenario generation failed:', error.message);
       console.error(error.stack);
       throw error;
     }
@@ -550,23 +550,23 @@ class ScenarioGeneratorV2 {
   // Generate a specific scenario (synchronous version - called from async wrapper)
   generateScenarioSync(type, decomposition, riskAssessment, enrichedRequirements, clientProfile, baseline, options) {
     try {
-      console.log(`      → Getting template for ${type}...`);
+      console.log(`      [INFO] Getting template for ${type}...`);
       const template = this.scenarioTemplates[type];
       if (!template) {
-        console.error(`   ⚠️ Template not found for scenario type: ${type}`);
+        console.error(`   [WARN] Template not found for scenario type: ${type}`);
         return null;
       }
       
       // Validate inputs
       if (!decomposition || !riskAssessment || !baseline) {
-        console.error(`   ⚠️ Missing required inputs for ${type} scenario`);
+        console.error(`   [WARN] Missing required inputs for ${type} scenario`);
         return null;
       }
       
       const modules = Array.isArray(decomposition.modules) ? decomposition.modules : [];
       const resourceStrategy = this.resourceStrategies[template.resourceStrategy] || this.resourceStrategies.standard;
       
-      console.log(`      → Building scenario object for ${type}...`);
+      console.log(`      [INFO] Building scenario object for ${type}...`);
       
       const scenario = {
         type,
@@ -628,14 +628,14 @@ class ScenarioGeneratorV2 {
         successFactors: this.identifySuccessFactors(type)
       };
 
-      console.log(`      → Adding optional fields for ${type}...`);
+      console.log(`      [INFO] Adding optional fields for ${type}...`);
 
       // Add phase breakdown if phased
       if (type === 'phased' && template.phases) {
         try {
           scenario.phases = this.generatePhases(decomposition, template.phases);
         } catch (phaseError) {
-          console.error(`   ⚠️ Failed to generate phases for ${type}:`, phaseError.message);
+          console.error(`   [WARN] Failed to generate phases for ${type}:`, phaseError.message);
           scenario.phases = [];
         }
       }
@@ -644,7 +644,7 @@ class ScenarioGeneratorV2 {
       try {
         scenario.roi = this.calculateROI(scenario, baseline);
       } catch (roiError) {
-        console.error(`   ⚠️ Failed to calculate ROI for ${type}:`, roiError.message);
+        console.error(`   [WARN] Failed to calculate ROI for ${type}:`, roiError.message);
         scenario.roi = {};
       }
 
@@ -652,13 +652,13 @@ class ScenarioGeneratorV2 {
       try {
         scenario.suitability = this.calculateSuitability(scenario, clientProfile || {}, options);
       } catch (suitError) {
-        console.error(`   ⚠️ Failed to calculate suitability for ${type}:`, suitError.message);
+        console.error(`   [WARN] Failed to calculate suitability for ${type}:`, suitError.message);
         scenario.suitability = 50;
       }
 
       return scenario;
     } catch (error) {
-      console.error(`   ❌ Error generating ${type} scenario:`, error.message);
+      console.error(`   [ERROR] Error generating ${type} scenario:`, error.message);
       console.error(error.stack);
       return null;
     }

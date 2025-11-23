@@ -1,5 +1,25 @@
-// src/modules/chain-executor-step4.js
-// Chain Executor with Risk Assessment (Step 4)
+/**
+ * Chain Executor Step 4: Risk Assessment
+ * 
+ * Extends ChainExecutorStep3 to add:
+ * - Risk identification and assessment
+ * - Risk scoring and prioritization
+ * - Mitigation strategy generation
+ * - Risk-adjusted estimates (cost and timeline buffers)
+ * - Contingency reserve calculation
+ * 
+ * When to Use:
+ * - For projects requiring risk analysis
+ * - When you need risk-adjusted estimates
+ * - For projects with high uncertainty
+ * - When client needs risk mitigation strategies
+ * 
+ * Used By:
+ * - ChainExecutorStep5 as base class
+ * 
+ * @see {@link ../../docs/02-modules/chain-executor-variants.md} for variant comparison
+ * @extends ChainExecutorStep3
+ */
 
 const ChainExecutorStep3 = require('./chain-executor-step3');
 const RiskAssessor = require('./risk-assessor');
@@ -28,7 +48,7 @@ class ChainExecutorStep4 extends ChainExecutorStep3 {
     }
     
     // Step 4: Risk Assessment
-    console.log('\n⚠️  Step 4: Risk Assessment & Mitigation Planning...');
+    console.log('\n[STEP 4] Risk Assessment & Mitigation Planning...');
     
     const riskContext = {
       domain: results.fullAnalysis?.domainContext?.industry || options.projectDetails?.marketRegion || 'generic',
@@ -92,12 +112,12 @@ class ChainExecutorStep4 extends ChainExecutorStep3 {
     };
     
     // Log summary
-    console.log(`   ✅ Risk assessment complete: ${riskAssessment.identifiedRisks.length} risks identified`);
-    console.log(`   📊 Risk level: ${riskAssessment.level.toUpperCase()}`);
-    console.log(`   🛡️ Confidence: ${riskAssessment.confidence}%`);
-    console.log(`   💰 Recommended buffer: ${Math.round((riskAssessment.recommendedBuffers.cost - 1) * 100)}%`);
-    console.log(`   ⏱️ Timeline buffer: ${Math.round((riskAssessment.recommendedBuffers.time - 1) * 100)}%`);
-    console.log(`   💵 Contingency reserve: ₹${riskAssessment.contingencyReserve.toLocaleString('en-IN')}`);
+    console.log(`   [OK] Risk assessment complete: ${riskAssessment.identifiedRisks.length} risks identified`);
+    console.log(`   [RISK] Risk level: ${riskAssessment.level.toUpperCase()}`);
+    console.log(`   [CONF] Confidence: ${riskAssessment.confidence}%`);
+    console.log(`   [BUFFER] Recommended buffer: ${Math.round((riskAssessment.recommendedBuffers.cost - 1) * 100)}%`);
+    console.log(`   [TIME] Timeline buffer: ${Math.round((riskAssessment.recommendedBuffers.time - 1) * 100)}%`);
+    console.log(`   [RESERVE] Contingency reserve: ₹${riskAssessment.contingencyReserve.toLocaleString('en-IN')}`);
     
     // Show top risks
     console.log('\n   Top Risks:');

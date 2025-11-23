@@ -1,5 +1,8 @@
 const chalk = require('chalk');
 
+const { handleError, wrapError, ErrorTypes } = require('../core/errors/ErrorHandler');
+const { validateRequired, validateObject } = require('../utils/validators');
+
 class OutputTranslator {
   constructor(library, logger) {
     this.library = library;

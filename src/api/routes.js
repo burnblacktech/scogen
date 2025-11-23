@@ -105,7 +105,7 @@ console.warn = originalConsoleWarn;
 // File upload configuration will be created in createRoutes function
 // to allow access to config for dynamic file size limits
 
-function createRoutes(executor, db, logger) {
+function createRoutes(executor, db, logger, io = null, cleanupService = null) {
   // Get configuration
   const config = executor?.config || require('../utils/config-manager');
   
@@ -2063,344 +2063,13 @@ function createRoutes(executor, db, logger) {
     }
   });
 
-  // Get scope history
-  router.get('/scopes', async (req, res, next) => {
-    try {
-      const limit = parseInt(req.query.limit) || 20;
+  // Scope Management Routes - Mounted from separate file
+  const createScopeRoutes = require('./routes/scopes');
+  router.use('/', createScopeRoutes(executor, db, logger));
 
-      // Get scopes from database using getRecentScopes method
-      const scopes = db.getRecentScopes ? db.getRecentScopes(limit) : [];
-
-      res.json({
-        success: true,
-        scopes: scopes.map(scope => ({
-          id: scope.id,
-          input: scope.input_raw || scope.input,
-          industry: scope.industry,
-          useCase: scope.use_case,
-          persona: scope.persona,
-          estimatedDays: scope.estimated_days,
-          estimatedCost: scope.estimated_cost,
-          confidence: scope.confidence,
-          createdAt: scope.created_at || scope.createdAt,
-          status: scope.status
-        })),
-        limit
-      });
-    } catch (error) {
-      next(error);
-    }
-  });
-
-  // Get specific scope
-  router.get('/scopes/:id', async (req, res, next) => {
-    try {
-      const { id } = req.params;
-
-      const scope = db.getScopeById ? db.getScopeById(id) : null;
-
-      if (!scope) {
-        return res.status(404).json({
-          error: 'Scope not found',
-          message: `No scope found with ID: ${id}`
-        });
-      }
-
-      res.json({
-        success: true,
-        scope: {
-          id: scope.id,
-          input: scope.input_raw,
-          industry: scope.industry,
-          useCase: scope.use_case,
-          persona: scope.persona,
-          estimatedDays: scope.estimated_days,
-          estimatedCost: scope.estimated_cost,
-          confidence: scope.confidence,
-          modules: scope.modules,
-          risks: scope.risks,
-          plan: scope.plan,
-          outputFull: scope.output_full,
-          createdAt: scope.created_at,
-          status: scope.status
-        }
-      });
-    } catch (error) {
-      next(error);
-    }
-  });
-
-  // Get review for existing scope
-  router.get('/scopes/:id/review', async (req, res, next) => {
-    try {
-      const { id } = req.params;
-
-      const scope = db.getScopeById ? db.getScopeById(id) : null;
-
-      if (!scope) {
-        return res.status(404).json({
-          error: 'Scope not found',
-          message: `No scope found with ID: ${id}`
-        });
-      }
-
-      // Parse stored scope data
-      const plan = scope.plan ? JSON.parse(scope.plan) : {};
-      const modules = scope.modules ? JSON.parse(scope.modules) : [];
-      const estimate = {
-        timeline: { days: scope.estimated_days || 0 },
-        cost: { total: scope.estimated_cost || 0 }
-      };
-      const domainContext = {
-        industry: scope.industry || 'generic',
-        useCase: scope.use_case || 'application'
-      };
-      const refinedScope = { refinedScope: { modules } };
-
-      // Generate review
-      const ScopeReviewer = require('../modules/scope-reviewer');
-      const reviewer = new ScopeReviewer(executor.library, db, logger);
-
-      const review = await reviewer.reviewScope(refinedScope.refinedScope, estimate, domainContext);
-
-      res.json({
-        success: true,
-        review: review,
-        scope: {
-          id: scope.id,
-          input: scope.input_raw,
-          industry: scope.industry,
-          useCase: scope.use_case
-        }
-      });
-    } catch (error) {
-      next(error);
-    }
-  });
-
-  // Generate cost proposal for existing scope
-  router.post('/scopes/:id/cost-proposal', async (req, res, next) => {
-    try {
-      const { id } = req.params;
-      const { rateTier = 'avg', includeOverhead = true } = req.body;
-
-      const scope = db.getScopeById ? db.getScopeById(id) : null;
-
-      if (!scope) {
-        return res.status(404).json({
-          error: 'Scope not found',
-          message: `No scope found with ID: ${id}`
-        });
-      }
-
-      // Parse stored scope data
-      const plan = scope.plan ? JSON.parse(scope.plan) : {};
-      const modules = scope.modules ? JSON.parse(scope.modules) : [];
-      const estimate = {
-        timeline: { days: scope.estimated_days || 0 },
-        cost: { total: scope.estimated_cost || 0 }
-      };
-      const refinedScope = { refinedScope: { modules } };
-
-      // Generate cost proposal
-      const CostProposalGenerator = require('../modules/cost-proposal');
-      const proposalGen = new CostProposalGenerator(logger, executor.config || require('../utils/config-manager'));
-
-      const proposal = proposalGen.generateProposal(refinedScope, estimate, {
-        rateTier,
-        includeOverhead
-      });
-
-      const markdown = proposalGen.formatProposalMarkdown(proposal, scope.use_case || 'Project');
-
-      res.json({
-        success: true,
-        proposal: proposal,
-        markdown: markdown
-      });
-    } catch (error) {
-      next(error);
-    }
-  });
-
-  // Generate specs for existing scope
-  router.post('/scopes/:id/specs', async (req, res, next) => {
-    try {
-      const { id } = req.params;
-      const { level = 'standard' } = req.body;
-
-      const scope = db.getScopeById ? db.getScopeById(id) : null;
-
-      if (!scope) {
-        return res.status(404).json({
-          error: 'Scope not found',
-          message: `No scope found with ID: ${id}`
-        });
-      }
-
-      // Parse stored scope data
-      const plan = scope.plan ? JSON.parse(scope.plan) : {};
-      const modules = scope.modules ? JSON.parse(scope.modules) : [];
-      const domainContext = {
-        industry: scope.industry || 'generic',
-        useCase: scope.use_case || 'application'
-      };
-
-      // Generate specs
-      const SpecGenerator = require('../modules/specs/spec-generator');
-      // Access library from executor (it's stored in ChainExecutor constructor)
-      const library = executor.library;
-      if (!library) {
-        return res.status(500).json({
-          error: 'Library not available',
-          message: 'Cannot generate specs without library instance'
-        });
-      }
-      const specGenerator = new SpecGenerator(library, logger);
-
-      const specs = await specGenerator.generate(plan, modules, domainContext, level);
-
-      if (!specs) {
-        return res.status(500).json({
-          error: 'Spec generation failed',
-          message: 'Failed to generate technical specifications'
-        });
-      }
-
-      res.json({
-        success: true,
-        specs: {
-          outputDir: specs.outputDir,
-          filesWritten: specs.filesWritten
-        }
-      });
-    } catch (error) {
-      next(error);
-    }
-  });
-
-  // Delete scope
-  router.delete('/scopes/:id', async (req, res, next) => {
-    try {
-      const { id } = req.params;
-
-      // Database doesn't have delete method yet, return not implemented
-      res.status(501).json({
-        error: 'Not implemented',
-        message: 'Delete functionality not available in current version'
-      });
-    } catch (error) {
-      next(error);
-    }
-  });
-
-  // Domain Knowledge endpoints
-  const DomainKnowledgeManager = require('../modules/domain-knowledge-manager');
-  const domainKnowledgeManager = new DomainKnowledgeManager(logger);
-
-  // GET /api/domain-knowledge - List all domain knowledge
-  router.get('/domain-knowledge', (req, res, next) => {
-    try {
-      const list = domainKnowledgeManager.listDomainKnowledge();
-      res.json({ success: true, domains: list });
-    } catch (error) {
-      logger.error('Failed to list domain knowledge', { error: error.message });
-      error.status = error.status || 500;
-      error.code = error.code || 'DOMAIN_KNOWLEDGE_LIST_ERROR';
-      next(error);
-    }
-  });
-
-  // GET /api/domain-knowledge/:domain - Get specific domain knowledge
-  router.get('/domain-knowledge/:domain', (req, res, next) => {
-    try {
-      const { domain } = req.params;
-      const knowledge = domainKnowledgeManager.getDomainKnowledge(domain);
-      
-      if (!knowledge) {
-        return res.status(404).json({
-          success: false,
-          error: `Domain knowledge not found: ${domain}`
-        });
-      }
-      
-      res.json({ success: true, knowledge });
-    } catch (error) {
-      logger.error('Failed to get domain knowledge', { error: error.message });
-      error.status = error.status || 500;
-      error.code = error.code || 'DOMAIN_KNOWLEDGE_GET_ERROR';
-      next(error);
-    }
-  });
-
-  // POST /api/domain-knowledge - Save domain knowledge
-  router.post('/domain-knowledge', (req, res, next) => {
-    try {
-      const domainKnowledge = req.body;
-      
-      if (!domainKnowledge.domain && !domainKnowledge.platformType) {
-        return res.status(400).json({
-          success: false,
-          error: 'Missing required field: domain or platformType'
-        });
-      }
-      
-      const result = domainKnowledgeManager.saveDomainKnowledge(domainKnowledge);
-      res.json({ success: true, ...result });
-    } catch (error) {
-      logger.error('Failed to save domain knowledge', { error: error.message });
-      error.status = error.status || 500;
-      error.code = error.code || 'DOMAIN_KNOWLEDGE_SAVE_ERROR';
-      next(error);
-    }
-  });
-
-  // PUT /api/domain-knowledge/:domain/pattern/:patternName - Update specific pattern
-  router.put('/domain-knowledge/:domain/pattern/:patternName', (req, res, next) => {
-    try {
-      // Sanitize parameters
-      const domain = InputSanitizer.sanitizeString(req.params.domain, {
-        allowNewlines: false,
-        maxLength: 100
-      });
-      const patternName = InputSanitizer.sanitizeString(req.params.patternName, {
-        allowNewlines: false,
-        maxLength: 100
-      });
-      const patternData = req.body;
-      
-      const result = domainKnowledgeManager.updatePattern(domain, patternName, patternData);
-      res.json({ success: true, ...result });
-    } catch (error) {
-      logger.error('Failed to update pattern', { error: error.message });
-      error.status = error.status || 500;
-      error.code = error.code || 'PATTERN_UPDATE_ERROR';
-      next(error);
-    }
-  });
-
-  // DELETE /api/domain-knowledge/:domain/pattern/:patternName - Delete specific pattern
-  router.delete('/domain-knowledge/:domain/pattern/:patternName', (req, res, next) => {
-    try {
-      // Sanitize parameters
-      const domain = InputSanitizer.sanitizeString(req.params.domain, {
-        allowNewlines: false,
-        maxLength: 100
-      });
-      const patternName = InputSanitizer.sanitizeString(req.params.patternName, {
-        allowNewlines: false,
-        maxLength: 100
-      });
-      
-      const result = domainKnowledgeManager.deletePattern(domain, patternName);
-      res.json({ success: true, ...result });
-    } catch (error) {
-      logger.error('Failed to delete pattern', { error: error.message });
-      error.status = error.status || 500;
-      error.code = error.code || 'PATTERN_DELETE_ERROR';
-      next(error);
-    }
-  });
+  // Domain Knowledge Routes - Mounted from separate file
+  const createDomainKnowledgeRoutes = require('./routes/domain-knowledge');
+  router.use('/', createDomainKnowledgeRoutes(executor, db, logger));
 
   // Save scope analysis to enhanced database
   router.post('/scope/save', async (req, res, next) => {
@@ -3788,7 +3457,8 @@ function createRoutes(executor, db, logger) {
         level,
         lockedScope,
         previousLevels,
-        chainResult
+        chainResult,
+        projectId // Pass projectId for function-level enhancement
       );
 
       // Render document
@@ -4093,6 +3763,85 @@ function createRoutes(executor, db, logger) {
       error.code = error.code || 'GET_METRICS_ERROR';
       next(error);
     }
+  });
+
+  // ============================================================================
+  // AUTHENTICATION ROUTES (Public)
+  // ============================================================================
+  
+  // Mount auth routes (public, no auth required)
+  const authRoutes = require('./routes/auth');
+  router.use('/auth', authRoutes);
+
+  // ============================================================================
+  // API V2 ROUTES (Precision Pivot)
+  // ============================================================================
+  
+  // Mount v2 routes
+  const createV2Routes = require('./routes/v2');
+  const v2Router = createV2Routes({ logger, db });
+  router.use('/v2', v2Router);
+  
+  // Mount intelligence routes (part of v2)
+  const intelligenceRoutes = require('./routes/intelligence');
+  router.use('/v2/intelligence', intelligenceRoutes);
+  
+  // Mount project routes (part of v2)
+  const projectRoutes = require('./routes/projects');
+  router.use('/v2/projects', projectRoutes);
+  
+  // Mount conversation routes (part of v2)
+  const conversationRoutes = require('./routes/conversation');
+  router.use('/v2/conversation', conversationRoutes);
+  
+  // Mount progressive output routes (part of v2)
+  const progressiveRoutes = require('./routes/progressive');
+  router.use('/v2/progressive', progressiveRoutes);
+  
+  // Mount learning routes (part of v2)
+  const learningRoutes = require('./routes/learning');
+  router.use('/v2/learning', learningRoutes);
+  
+  // ============================================================================
+  // API V3 ROUTES (Unified Flow)
+  // ============================================================================
+  
+  // Mount unified routes (new simplified flow)
+  try {
+    const createUnifiedRoutes = require('./routes/unified');
+    // Get library from executor or initialize new one
+    const library = executor?.library || (() => {
+      const Library = require('../modules/library');
+      return new Library(db, logger, config);
+    })();
+    const unifiedRoutes = createUnifiedRoutes(library, logger, db, io);
+    router.use('/v3/unified', unifiedRoutes);
+    logger.info('Unified routes mounted at /api/v3/unified');
+  } catch (error) {
+    logger.error('Failed to mount unified routes', { 
+      error: error.message,
+      stack: error.stack 
+    });
+    // Continue without unified routes
+  }
+
+  // Mount admin routes (optional, requires cleanupService)
+  if (cleanupService) {
+    try {
+      const createAdminRoutes = require('./routes/admin');
+      const adminRoutes = createAdminRoutes(cleanupService, logger);
+      router.use('/v3/admin', adminRoutes);
+      logger.info('Admin routes mounted at /api/v3/admin');
+    } catch (error) {
+      logger.warn('Failed to mount admin routes', { error: error.message });
+      // Continue without admin routes
+    }
+  }
+  
+  // Deprecation warning for v1 API
+  router.use('/v1/*', (req, res, next) => {
+    res.setHeader('X-API-Deprecation-Warning', 'API v1 is deprecated. Please use v2.');
+    next();
   });
 
   return router;
