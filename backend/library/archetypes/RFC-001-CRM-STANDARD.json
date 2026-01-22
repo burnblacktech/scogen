@@ -1,0 +1,72 @@
+{
+    "id": "ARCH_CRM_STD_01",
+    "name": "Standard CRM",
+    "version": "1.0",
+    "description": "Baseline CRM for SMEs with Auth, Dashboard, and Leads.",
+    "base_hours": 320,
+    "tech_stack": [
+        "React",
+        "Node.js",
+        "PostgreSQL"
+    ],
+    "features": [
+        {
+            "id": "AUTH_01",
+            "category": "Authentication",
+            "title": "Email/Password Login",
+            "description": "Secure login flow with JWT and refresh tokens.",
+            "standard_hours": 20.0,
+            "complexity": "LOW",
+            "acceptance_criteria": "User must receive HTTPOnly Cookie. Password must be hashed (Bcrypt 12).",
+            "technical_mapping": {
+                "module_namespace": "auth",
+                "required_files": [
+                    "src/modules/auth/auth.service.ts",
+                    "src/modules/auth/auth.controller.ts"
+                ],
+                "test_coverage_threshold": 100,
+                "forbidden_patterns": [
+                    "md5",
+                    "console.log"
+                ]
+            },
+            "asset_source": {
+                "repo_url": "https://github.com/scogen-internal/assets.git",
+                "branch": "main",
+                "path": "backend/modules/auth_standard",
+                "preview_image": "/assets/previews/auth_login_v1.png"
+            }
+        },
+        {
+            "id": "DASH_01",
+            "category": "Dashboard",
+            "title": "Executive Overview",
+            "description": "Charts displaying daily leads and revenue.",
+            "standard_hours": 40.0,
+            "complexity": "MEDIUM",
+            "acceptance_criteria": "Charts must render under 200ms using cached data.",
+            "technical_mapping": {
+                "module_namespace": "dashboard",
+                "required_files": [
+                    "src/modules/dashboard/stats.service.ts"
+                ],
+                "test_coverage_threshold": 80
+            },
+            "asset_source": {
+                "repo_url": "https://github.com/scogen-internal/assets.git",
+                "branch": "main",
+                "path": "frontend/components/dashboard_v1"
+            }
+        }
+    ],
+    "variance_points": [
+        {
+            "id": "VAR_OTP",
+            "question": "Do you require SMS OTP Login?",
+            "trigger_if_yes": [
+                "AUTH_OTP_01"
+            ],
+            "cost_impact": 10.0
+        }
+    ]
+}

@@ -1,0 +1,69 @@
+{
+    "id": "ARCH_ECOM_STD_01",
+    "name": "Standard E-Commerce Store",
+    "version": "1.0",
+    "description": "Single-vendor online store with Inventory, Search, and Payment Gateway.",
+    "base_hours": 400,
+    "tech_stack": [
+        "Next.js (SSR)",
+        "Node.js",
+        "PostgreSQL",
+        "Stripe/Razorpay"
+    ],
+    "features": [
+        {
+            "id": "CATALOG_01",
+            "category": "Catalog",
+            "title": "Product Listing & Search",
+            "description": "Faceted search (Color, Size) with elastic filtering.",
+            "standard_hours": 50.0,
+            "complexity": "MEDIUM",
+            "acceptance_criteria": "Search queries must return in <100ms.",
+            "technical_mapping": {
+                "module_namespace": "catalog",
+                "required_files": [
+                    "src/modules/catalog/search.service.ts"
+                ],
+                "test_coverage_threshold": 80
+            },
+            "asset_source": {
+                "repo_url": "https://github.com/scogen-internal/assets.git",
+                "branch": "main",
+                "path": "backend/modules/catalog_search"
+            }
+        },
+        {
+            "id": "PAYMENT_STD",
+            "category": "Payment",
+            "title": "Payment Gateway Integration",
+            "description": "Razorpay/Stripe integration with Webhook handling.",
+            "standard_hours": 30.0,
+            "complexity": "HIGH",
+            "acceptance_criteria": "Must handle 'payment_failed' webhook and retry logic.",
+            "technical_mapping": {
+                "module_namespace": "payment",
+                "required_files": [
+                    "src/modules/payment/webhook.handler.ts"
+                ],
+                "forbidden_patterns": [
+                    "disable_ssl_verification"
+                ]
+            },
+            "asset_source": {
+                "repo_url": "https://github.com/scogen-internal/assets.git",
+                "branch": "main",
+                "path": "backend/modules/payment_gateway"
+            }
+        }
+    ],
+    "variance_points": [
+        {
+            "id": "VAR_SEO",
+            "question": "Do you need Advanced SEO (Schema.org / OpenGraph)?",
+            "trigger_if_yes": [
+                "SEO_ADVANCED_MOD"
+            ],
+            "cost_impact": 20.0
+        }
+    ]
+}

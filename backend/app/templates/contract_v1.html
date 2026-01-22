@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { font-family: 'Helvetica', sans-serif; padding: 40px; color: #333; }
+        .header { border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 30px; }
+        .title { font-size: 24px; font-weight: bold; }
+        .meta { font-size: 12px; color: #666; }
+        .section { margin-top: 30px; }
+        .req-item { background: #f9f9f9; padding: 10px; margin-bottom: 5px; border-left: 3px solid #000; }
+        .signature-block { margin-top: 50px; border-top: 1px dashed #ccc; padding-top: 20px; }
+        .hash-stamp { font-family: 'Courier New', monospace; font-size: 10px; color: #999; margin-top: 20px; text-align: center; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="title">Technical Scope of Work: {{ project_name }}</div>
+        <div class="meta">Project ID: {{ project_id }} | Date: {{ generation_date }}</div>
+    </div>
+
+    <div class="section">
+        <h3>1. Executive Summary</h3>
+        <p>{{ description }}</p>
+    </div>
+
+    <div class="section">
+        <h3>2. Functional Requirements (The Vault)</h3>
+        {% for req in requirements %}
+        <div class="req-item">
+            <strong>{{ req.title }}</strong><br>
+            <span style="font-size: 12px;">{{ req.description }}</span>
+        </div>
+        {% endfor %}
+    </div>
+
+    <div class="section">
+        <h3>3. Commercial Terms</h3>
+        <p><strong>Total Estimated Cost:</strong> ₹{{ total_cost }}</p>
+        <p><strong>Status:</strong> FROZEN (Scope Locked)</p>
+    </div>
+
+    <div class="signature-block">
+        <p>This document is digitally notarized by Scogen OS.</p>
+    </div>
+
+    <div class="hash-stamp">
+        DIGITAL FINGERPRINT (SHA-256):<br>
+        {{ document_hash }}
+    </div>
+</body>
+</html>

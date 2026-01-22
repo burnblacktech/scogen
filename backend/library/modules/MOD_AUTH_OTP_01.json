@@ -1,0 +1,19 @@
+{
+    "id": "MOD_AUTH_OTP_01",
+    "category": "Authentication",
+    "title": "Mobile OTP Login (India)",
+    "description": "Login via Phone Number using SMS Provider (Twilio/Msg91).",
+    "standard_hours": 25.0,
+    "complexity": "LOW",
+    "acceptance_criteria": "User can receive OTP on mobile and login successfully. Forbidden: email_required.",
+    "technical_mapping": {
+        "module_namespace": "auth_otp",
+        "forbidden_patterns": [
+            "email_required"
+        ]
+    },
+    "asset_source": {
+        "repo_url": "https://github.com/scogen-internal/assets.git",
+        "path": "backend/modules/auth_otp"
+    }
+}

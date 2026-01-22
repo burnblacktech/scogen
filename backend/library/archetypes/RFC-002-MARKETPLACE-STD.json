@@ -1,0 +1,91 @@
+{
+    "id": "ARCH_MKT_STD_01",
+    "name": "Standard Hyperlocal Marketplace",
+    "version": "1.0",
+    "description": "Two-sided marketplace with Geolocation, Ordering, and Real-time Tracking (e.g., Food Delivery, Cabs).",
+    "base_hours": 600,
+    "tech_stack": [
+        "React Native",
+        "Node.js",
+        "PostgreSQL",
+        "Redis",
+        "Socket.io"
+    ],
+    "features": [
+        {
+            "id": "AUTH_DUAL_01",
+            "category": "Authentication",
+            "title": "Dual-Role Auth (Customer/Driver)",
+            "description": "Separate login flows. Drivers require Document Verification (KYC).",
+            "standard_hours": 40.0,
+            "complexity": "MEDIUM",
+            "acceptance_criteria": "Driver cannot take orders until Admin approves KYC documents.",
+            "technical_mapping": {
+                "module_namespace": "auth_marketplace",
+                "required_files": [
+                    "src/modules/auth/driver.service.ts",
+                    "src/modules/auth/customer.service.ts"
+                ],
+                "test_coverage_threshold": 90
+            },
+            "asset_source": {
+                "repo_url": "https://github.com/scogen-internal/assets.git",
+                "branch": "main",
+                "path": "backend/modules/auth_dual_role"
+            }
+        },
+        {
+            "id": "GEO_01",
+            "category": "Geolocation",
+            "title": "Live Location Tracking",
+            "description": "Real-time coordinate updates using WebSockets/Redis.",
+            "standard_hours": 80.0,
+            "complexity": "HIGH",
+            "acceptance_criteria": "Location updates must persist to Redis every 5 seconds. History saved to PostGIS.",
+            "technical_mapping": {
+                "module_namespace": "geo",
+                "required_files": [
+                    "src/modules/geo/tracking.gateway.ts"
+                ],
+                "forbidden_patterns": [
+                    "polling"
+                ]
+            },
+            "asset_source": {
+                "repo_url": "https://github.com/scogen-internal/assets.git",
+                "branch": "main",
+                "path": "backend/modules/geo_tracking"
+            }
+        },
+        {
+            "id": "ORDER_FLOW_01",
+            "category": "Order Management",
+            "title": "Cart & Checkout Flow",
+            "description": "Add items, calculate tax/delivery fee, payment intent.",
+            "standard_hours": 60.0,
+            "complexity": "MEDIUM",
+            "acceptance_criteria": "Inventory locked for 15 mins during checkout.",
+            "technical_mapping": {
+                "module_namespace": "orders",
+                "required_files": [
+                    "src/modules/orders/cart.service.ts"
+                ]
+            },
+            "asset_source": {
+                "repo_url": "https://github.com/scogen-internal/assets.git",
+                "branch": "main",
+                "path": "backend/modules/order_flow_std"
+            }
+        }
+    ],
+    "variance_points": [
+        {
+            "id": "VAR_OFFLINE",
+            "question": "Is this for Rural areas with poor internet?",
+            "trigger_if_yes": [
+                "OFFLINE_SYNC_MOD"
+            ],
+            "cost_impact": 120.0
+        }
+    ]
+}

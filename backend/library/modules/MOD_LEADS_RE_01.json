@@ -1,0 +1,20 @@
+{
+    "id": "MOD_LEADS_RE_01",
+    "category": "Leads",
+    "title": "Real Estate Lead Management",
+    "description": "Lead tracking with Property preferences, Budget, and Location mapping.",
+    "standard_hours": 45.0,
+    "complexity": "MEDIUM",
+    "acceptance_criteria": "Lead table must support sorting by 'Budget Max' and filtering by 'BHK Type'.",
+    "technical_mapping": {
+        "module_namespace": "leads_realestate",
+        "required_files": [
+            "src/modules/leads/re_leads.service.ts"
+        ],
+        "db_schema_snippet": "CREATE TABLE leads (id UUID, budget NUMERIC, bhk_type VARCHAR(10), location POINT...)"
+    },
+    "asset_source": {
+        "repo_url": "https://github.com/scogen-internal/assets.git",
+        "path": "backend/modules/leads_realestate"
+    }
+}
